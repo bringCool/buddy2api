@@ -11,15 +11,15 @@ if [ ! -d dist ]; then
 fi
 
 for profile in debug release; do
-  APP="target/$profile/bundle/macos/workbuddy-switch.app"
-  [ -d "$APP" ] || APP="src-tauri/target/$profile/bundle/macos/wb-switch.app"  # 兼容旧路径
+  APP="target/$profile/bundle/macos/buddy2api.app"
+  [ -d "$APP" ] || APP="src-tauri/target/$profile/bundle/macos/buddy2api.app"  # 兼容旧路径
   if [ -d "$APP" ]; then
     rm -rf "$APP/Contents/Resources/dist" 2>/dev/null || true
     cp -R dist "$APP/Contents/Resources/dist"
     echo "fix-app: dist 已复制到 $APP/Contents/Resources/dist"
     # 签名让 TCC（App 管理/完全磁盘访问）能识别本 app：
-    # 优先自签名证书（~/.wb-switch，已加入钥匙串并设为 codeSign 信任），失败回退 adhoc。
-    SIGN_IDENTITY="wb-switch Development Signing"
+    # 优先自签名证书（~/.buddy2api，已加入钥匙串并设为 codeSign 信任），失败回退 adhoc。
+    SIGN_IDENTITY="buddy2api Development Signing"
     if codesign --force --deep --sign "$SIGN_IDENTITY" "$APP" 2>/dev/null; then
       echo "fix-app: 已用证书签名 $APP"
     elif codesign --force --deep --sign - "$APP" 2>/dev/null; then

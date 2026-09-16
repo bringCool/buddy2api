@@ -1,19 +1,19 @@
 {
-  "name": "workbuddy-switch",
+  "name": "buddy2api",
   "version": "0.1.39",
-  "description": "WorkBuddy 账号切换工具：本地 webui（浏览器操作）+ 桌面 App（安装后运行 workbuddy-switch）",
+  "description": "WorkBuddy 账号切换工具：本地 webui（浏览器操作）+ 桌面 App（安装后运行 buddy2api）",
   "bin": {
-    "workbuddy-switch": "bin/workbuddy-switch.js"
+    "buddy2api": "bin/buddy2api.js"
   },
   "files": [
-    "bin/workbuddy-switch.js",
+    "bin/buddy2api.js",
     "scripts"
   ],
   "optionalDependencies": {
-    "workbuddy-switch-darwin-arm64": "0.1.39",
-    "workbuddy-switch-darwin-x64": "0.1.39",
-    "workbuddy-switch-win32-x64": "0.1.39",
-    "workbuddy-switch-linux-x64": "0.1.39"
+    "buddy2api-darwin-arm64": "0.1.39",
+    "buddy2api-darwin-x64": "0.1.39",
+    "buddy2api-win32-x64": "0.1.39",
+    "buddy2api-linux-x64": "0.1.39"
   },
   "scripts": {
     "postinstall": "node scripts/install.js"

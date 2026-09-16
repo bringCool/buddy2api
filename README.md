@@ -1,55 +1,65 @@
-# workbuddy-switch
+# Buddy2API
 
-WorkBuddy（含国际版 WorkBuddy AI）/ CodeBuddy CLI / CodeBuddy CN IDE 账号切换桌面 App（Tauri），支持积分到期监控与自动签到。
+WorkBuddy（含国际版 WorkBuddy AI）/ CodeBuddy CLI / CodeBuddy CN IDE 账号切换桌面 App（Tauri），支持积分到期监控与自动签到；并内置 **2API**：把当前激活账号的凭据代理成本地 OpenAI 兼容接口，供任意第三方 CLI / SDK 复用。
 
 同时提供 npm / webui 版本，方便在浏览器中使用同一套账号管理能力。
 
 - **桌面 App**：从 GitHub Releases 下载 macOS、Windows 或 Linux 安装包（Tauri，推荐日常使用）
-- **npm / webui**：`npm i -g workbuddy-switch` 后运行 `workbuddy-switch`，浏览器打开操作界面
+- **npm / webui**：`npm i -g buddy2api` 后运行 `buddy2api`，浏览器打开操作界面
 
 多账号共享登录态（国内版 `workbuddy-desktop.info`、国际版 `workbuddy-desktop-ai.info`），一键切换 WorkBuddy 登录账号，并支持将当前账号的会话复制给目标账号（云端归属目标）。两档位在账号页切换，账号与操作互不影响。
 
 <p align="center">
-  <img src="public/icon-transparent.png" alt="WorkBuddy Switch 图标" width="128" />
+  <img src="public/icon-transparent.png" alt="Buddy2API 图标" width="128" />
 </p>
 
 <p align="center">
-  <strong>workbuddy-switch</strong><br />
-  WorkBuddy / CodeBuddy CLI 账号切换工具
+  <strong>Buddy2API</strong><br />
+  WorkBuddy / CodeBuddy CLI 账号切换工具 + 本地 OpenAI 兼容代理
 </p>
+
+## 来源与许可
+
+本项目基于 [changexbc/workbuddy-switch](https://github.com/changexbc/workbuddy-switch) 二次开发，在其账号切换能力之上增加了 2API 本地代理等特性。
+
+- 上游：<https://github.com/changexbc/workbuddy-switch>
+- 本项目：<https://github.com/bringCool/buddy2api>
+- 许可证：MIT（见 [LICENSE](LICENSE)），保留上游版权声明，允许使用、修改与分发。
+
+> 本仓库基于上游 MIT 许可二次开发并独立分发，非上游官方版本。
 
 
 ### 在线演示
 
-[打开 GitHub Pages 在线演示](https://changexbc.github.io/workbuddy-switch/)（只读演示；账号、积分与请求记录均为虚构数据，所有业务操作均已禁用。）
+[打开 GitHub Pages 在线演示](https://bringCool.github.io/buddy2api/)（只读演示；账号、积分与请求记录均为虚构数据，所有业务操作均已禁用。）
 
 ## 快速开始
 
 ### npm 安装（webui）
 
 ```bash
-npm i -g workbuddy-switch
-workbuddy-switch              # 启动本地服务 + 自动打开浏览器
-workbuddy-switch status       # 终端查看当前账号
+npm i -g buddy2api
+buddy2api              # 启动本地服务 + 自动打开浏览器
+buddy2api status       # 终端查看当前账号
 ```
 
 webui 界面与桌面 App 一致：WorkBuddy / CodeBuddy CLI / CodeBuddy IDE 账号切换、积分到期监控、自动签到、会话复制、Token 统计与 token 保活。
 
 ### 桌面 App
 
-前往 [GitHub Releases](https://github.com/changexbc/workbuddy-switch/releases/latest) 下载对应平台的安装包：
+前往 [GitHub Releases](https://github.com/bringCool/buddy2api/releases/latest) 下载对应平台的安装包：
 
 | 平台 | 安装包 | 安装方式 |
 | --- | --- | --- |
-| macOS Apple Silicon（M 系列，arm64） | `workbuddy-switch_<版本>_aarch64.dmg` | 打开 DMG，将 `workbuddy-switch.app` 拖入「应用程序」 |
-| macOS Intel（x86_64） | `workbuddy-switch_<版本>_x86_64.dmg` | 打开 DMG，将 `workbuddy-switch.app` 拖入「应用程序」 |
-| Windows x64 | `workbuddy-switch_<版本>_x64-setup.exe` | 运行安装程序并按提示完成安装 |
-| Linux x64 | `workbuddy-switch_<版本>_amd64.deb` / `workbuddy-switch_<版本>_amd64.AppImage` | Debian/Ubuntu 安装 `.deb`；其他发行版可给 AppImage 添加执行权限后直接运行 |
+| macOS Apple Silicon（M 系列，arm64） | `buddy2api_<版本>_aarch64.dmg` | 打开 DMG，将 `buddy2api.app` 拖入「应用程序」 |
+| macOS Intel（x86_64） | `buddy2api_<版本>_x86_64.dmg` | 打开 DMG，将 `buddy2api.app` 拖入「应用程序」 |
+| Windows x64 | `buddy2api_<版本>_x64-setup.exe` | 运行安装程序并按提示完成安装 |
+| Linux x64 | `buddy2api_<版本>_amd64.deb` / `buddy2api_<版本>_amd64.AppImage` | Debian/Ubuntu 安装 `.deb`；其他发行版可给 AppImage 添加执行权限后直接运行 |
 
 macOS 首次启动若提示无法验证开发者，先在 Finder 中按住 Control 点击应用并选择「打开」，或前往「系统设置 → 隐私与安全性」选择「仍要打开」。仅当安装包来自上述官方 Releases、且系统仍提示「已损坏」时，再执行：
 
 ```bash
-xattr -rd com.apple.quarantine "/Applications/workbuddy-switch.app"
+xattr -rd com.apple.quarantine "/Applications/buddy2api.app"
 ```
 
 应用能启动但切换账号时提示无权限，请参阅下方 [macOS 权限说明](#macos-权限说明)。
@@ -71,6 +81,7 @@ xattr -rd com.apple.quarantine "/Applications/workbuddy-switch.app"
 | 自动轮换 | 后台定时把 CodeBuddy CLI 的后续启动账号设为积分最紧迫（最早到期）的账号；当前会话保持原账号，重新加载会话或重启 CLI 后使用新的账号 |
 | 自动更新 | 配置 GitHub Releases 源检查新版本；整包更新经签名校验（tauri-updater） |
 | 权限检测 | macOS 授权引导（App 管理 / 完全磁盘访问拖拽授权 + 自动检测） |
+| **2API 本地代理** | 把当前激活账号的凭据代理成本地 OpenAI 兼容接口（`/v1/chat/completions`、`/v1/models`），供第三方 CLI/SDK 直接复用；支持 `cn/`、`intl/` 前缀锁定渠道、按倍率/轮询/熔断选号、会话粘性命中 cache、token 自动刷新。详见 [2API 本地代理](#2api-本地代理) |
 
 ## 国际版（WorkBuddy AI）
 
@@ -86,6 +97,41 @@ xattr -rd com.apple.quarantine "/Applications/workbuddy-switch.app"
 - **CodeBuddy CLI**：国内/国际是同一套 CLI。切国际账号时写入 `CODEBUDDY_INTERNET_ENVIRONMENT=public`（官网 IAM 国际版取值），`CODEBUDDY_BASE_URL=https://www.workbuddy.ai/v2`（OpenAI 兼容接口；写成门户根地址 `https://www.workbuddy.ai` 会 POST `/chat/completions` 到官网 nginx，返回 405），并覆盖 `~/.codebuddy/local_storage` 里 CLI 自己缓存的 `internal` / 端点缓存（只改 settings 不够，CLI 启动会把这份缓存灌进进程环境）。切国内则写回 `internal`、端点缓存写 `https://www.workbuddy.cn`，并删除 `CODEBUDDY_BASE_URL`。账号页切 CLI 会二次确认；跨国内/国际时确认后自动关闭正在运行的 CLI（不含 IDE），请随后重新打开。自动轮换不关进程。
 
 > 说明：国际版链路基于接口与客户端布局实现，尚未在真实国际版客户端上做端到端切换验证；遇到问题请附上版本与日志反馈。
+
+## 2API 本地代理
+
+在设置页开启「本地 API（2API）」后，`buddy2api` 常驻服务会额外暴露一套 **OpenAI 兼容接口**，用账号库里当前激活账号的凭据转发到 WorkBuddy 官方接口。上游本身就是标准 OpenAI 协议，因此代理不做任何格式转换，只做「选账号 + 注入鉴权头 + 双向流透传」。
+
+- **Base URL**：`http://127.0.0.1:57890/v1`
+- **端点**：`POST /v1/chat/completions`、`GET /v1/models`
+- **鉴权**：本机免凭据（仅绑定 `127.0.0.1`）；请勿在共享电脑开启
+
+### 模型命名
+
+`/v1/models` 会聚合**国内站 + 国际站**的官方模型列表，每个模型同时给出两类 id：
+
+| 形态 | 含义 |
+| --- | --- |
+| `cn/<model>` | 锁定国内站（`workbuddy.cn`） |
+| `intl/<model>` | 锁定国际站（`workbuddy.ai`） |
+| `<model>` | 默认池，跨两站调度 |
+
+### 路由与稳定性
+
+- **选号**：有前缀锁站；无前缀跨站。优先按官方 `credits` 倍率最少，倍率相同则轮询。
+- **会话粘性**：客户端带 `X-Conversation-ID` 时，同一会话固定路由到同一账号以命中上游 cache。
+- **熔断**：账号级失败（401/403）连续达阈值后进入冷却，冷却期跳过，成功后清零。
+- **token 自动刷新**：发请求前若即将过期则先刷新；上游仍返回 401/403 时刷新一次并重试一次。
+
+示例：
+
+```bash
+curl http://127.0.0.1:57890/v1/models
+
+curl http://127.0.0.1:57890/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"intl/deepseek-v4.1-flash","messages":[{"role":"user","content":"hi"}],"stream":true}'
+```
 
 ## 使用
 
@@ -159,22 +205,23 @@ Token 统计页按来源展示 Token 总览和每日趋势，覆盖 WorkBuddy、
 
 > **生效边界**：自动轮换只更新后续 restore/load 使用的默认账号，不会热切换当前会话。macOS/Linux 下一次 helper 执行会读取最新账号；Windows 会把最新 Token 写入 settings。正在运行的会话继续使用启动或加载时取得的账号；请由 ACP 重新加载会话，或重启 CodeBuddy CLI。普通 CLI 在同一进程内执行 `/resume` 不保证重新读取认证配置。
 
-配置项：`check_interval_minutes`（检查间隔，默认 5）、`cooldown_minutes`、`min_urgency_hours`、`active_guard_minutes`、`min_remaining_credits`、`min_gap_hours`。可在设置页调整，或直接编辑 `~/.wb-switch/auto_rotate_config.json`。
+配置项：`check_interval_minutes`（检查间隔，默认 5）、`cooldown_minutes`、`min_urgency_hours`、`active_guard_minutes`、`min_remaining_credits`、`min_gap_hours`。可在设置页调整，或直接编辑 `~/.buddy2api/auto_rotate_config.json`。
 
 ### macOS 权限说明
 
 切换账号需要写入 WorkBuddy 认证文件，macOS 要求授权「App 管理」（或「完全磁盘访问」）：
 
 1. 首次切换报「无权限」时，点「打开系统设置」
-2. 优先在 **App 管理** 里打开 workbuddy-switch 开关；若没有，则去 **完全磁盘访问** 把 workbuddy-switch 拖进带箭头的框
+2. 优先在 **App 管理** 里打开 buddy2api 开关；若没有，则去 **完全磁盘访问** 把 buddy2api 拖进带箭头的框
 3. 授权后重启本应用生效；设置页「权限检测」可随时验证
 
 > webui 模式：由启动服务的终端进程权限决定；若终端已授权完全磁盘访问则无需额外操作。
 
 ## 致谢
 
-感谢 [Linux.do](https://linux.do) 社区。
+- 上游项目 [changexbc/workbuddy-switch](https://github.com/changexbc/workbuddy-switch)
+- 感谢 [Linux.do](https://linux.do) 社区。
 
 ## 许可
 
-[MIT](./LICENSE)
+[MIT](./LICENSE)。本项目基于上游 MIT 许可二次开发，保留上游版权声明。

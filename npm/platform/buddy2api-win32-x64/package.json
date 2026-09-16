@@ -1,0 +1,15 @@
+{
+  "name": "buddy2api-win32-x64",
+  "version": "0.1.39",
+  "description": "buddy2api platform binary (win32-x64)",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "license": "MIT"
+}

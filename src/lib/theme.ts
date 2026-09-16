@@ -1,7 +1,7 @@
 export type ThemePreference = "system" | "light" | "dark";
 
-const THEME_STORAGE_KEY = "wb-switch.theme";
-const LEGACY_DARK_STORAGE_KEY = "wb-switch.dark";
+const THEME_STORAGE_KEY = "buddy2api.theme";
+const LEGACY_DARK_STORAGE_KEY = "buddy2api.dark";
 
 function isThemePreference(value: string | null): value is ThemePreference {
   return value === "system" || value === "light" || value === "dark";

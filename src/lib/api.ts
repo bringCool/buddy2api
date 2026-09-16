@@ -38,7 +38,7 @@ import { screenshotDemoResponse } from "./screenshot-demo";
 /**
  * 双通道适配层：
  * - 桌面 App（Tauri）：`invoke` 调用 Rust commands
- * - webui（浏览器）：HTTP fetch 调用本地 workbuddy-switch 服务（127.0.0.1）
+ * - webui（浏览器）：HTTP fetch 调用本地 buddy2api 服务（127.0.0.1）
  */
 const API_BASE = "http://127.0.0.1:57890";
 
@@ -160,7 +160,7 @@ async function httpCall<T>(cmd: string, args?: Record<string, unknown>): Promise
       body: route.method === "POST" ? JSON.stringify(args ?? {}) : undefined,
     });
   } catch {
-    throw new Error(`无法连接 workbuddy-switch 服务（${API_BASE}），请先运行 \`workbuddy-switch\``);
+    throw new Error(`无法连接 buddy2api 服务（${API_BASE}），请先运行 \`buddy2api\``);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

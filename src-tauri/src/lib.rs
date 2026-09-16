@@ -6,9 +6,9 @@ mod instance_lock;
 mod tray;
 
 use std::time::Duration;
-use wb_switch_core::modules;
+use buddy2api_core::modules;
 
-const SCREENSHOT_DEMO_ENV: &str = "WB_SWITCH_SCREENSHOT_DEMO";
+const SCREENSHOT_DEMO_ENV: &str = "BUDDY2API_SCREENSHOT_DEMO";
 
 pub(crate) fn is_screenshot_demo() -> bool {
     std::env::var(SCREENSHOT_DEMO_ENV).as_deref() == Ok("1")

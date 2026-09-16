@@ -9,13 +9,13 @@ cd "$(dirname "$0")/../npm/platform" || exit 1
 
 gen() {
   local tag="$1" os="$2" cpu="$3" binfile="$4"
-  local dir="workbuddy-switch-$tag"
+  local dir="buddy2api-$tag"
   mkdir -p "$dir/bin"
   cat > "$dir/package.json" << JSON
 {
-  "name": "workbuddy-switch-$tag",
+  "name": "buddy2api-$tag",
   "version": "$V",
-  "description": "workbuddy-switch platform binary ($tag)",
+  "description": "buddy2api platform binary ($tag)",
   "os": ["$os"],
   "cpu": ["$cpu"],
   "files": ["bin"],
@@ -25,10 +25,10 @@ JSON
   echo "生成 $dir (bin=$binfile)"
 }
 
-gen darwin-arm64 darwin arm64 wb-switch-darwin-arm64
-gen darwin-x64 darwin x64 wb-switch-darwin-x64
-gen win32-x64 win32 x64 wb-switch-win32-x64.exe
-gen linux-x64 linux x64 wb-switch-linux-x64
-gen linux-arm64 linux arm64 wb-switch-linux-arm64
+gen darwin-arm64 darwin arm64 buddy2api-darwin-arm64
+gen darwin-x64 darwin x64 buddy2api-darwin-x64
+gen win32-x64 win32 x64 buddy2api-win32-x64.exe
+gen linux-x64 linux x64 buddy2api-linux-x64
+gen linux-arm64 linux arm64 buddy2api-linux-arm64
 
 echo "平台包生成完成（版本 $V），把对应二进制复制到各包 bin/ 后 npm publish。"

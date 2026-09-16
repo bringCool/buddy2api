@@ -628,9 +628,9 @@ function PermissionCheckCard() {
             <p className="mb-1 font-medium text-foreground">如何授权（拖拽方式）：</p>
             <ol className="list-decimal space-y-1 pl-4">
               <li>点上方「打开完全磁盘访问」</li>
-              <li>再点「在 Finder 中显示」打开 workbuddy-switch 所在位置</li>
+              <li>再点「在 Finder 中显示」打开 buddy2api 所在位置</li>
               <li>
-                把 <b>workbuddy-switch.app</b> 从 Finder <b>直接拖进</b>完全磁盘访问的列表区域
+                把 <b>buddy2api.app</b> 从 Finder <b>直接拖进</b>完全磁盘访问的列表区域
                 （即使没有提示框，拖入即生效），然后打开它的开关
               </li>
               <li>回到本页点「检测权限」，或直接重试切换</li>

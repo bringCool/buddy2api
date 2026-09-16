@@ -1,0 +1,15 @@
+{
+  "name": "buddy2api-darwin-x64",
+  "version": "0.1.39",
+  "description": "buddy2api platform binary (darwin-x64)",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "license": "MIT"
+}

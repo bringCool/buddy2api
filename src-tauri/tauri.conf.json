@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "workbuddy-switch",
+  "productName": "buddy2api",
   "version": "0.1.39",
-  "identifier": "com.wbswitch.app",
+  "identifier": "com.buddy2api.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "workbuddy-switch · WorkBuddy 账号切换",
+        "title": "buddy2api · WorkBuddy 账号切换",
         "width": 1000,
         "height": 720,
         "minWidth": 720,
@@ -48,9 +48,9 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYwNEU4RkQ5OEZCN0FGRApSV1Q5ZXZ1WS9lZ0VEd1VuVFpOYjU1OGJGd1NmMVhaWHJTSEdnNVRSSEcweUxWR05TN0h2WnloSwo=",
       "endpoints": [
-        "https://github.com/changexbc/workbuddy-switch/releases/latest/download/latest.json",
-        "https://github.com/changexbc/workbuddy-switch/releases/latest/download/latest-{{target}}-{{arch}}.json",
-        "https://github.com/changexbc/workbuddy-switch/releases/latest/download/latest-macos-{{arch}}.json"
+        "https://github.com/bringCool/buddy2api/releases/latest/download/latest.json",
+        "https://github.com/bringCool/buddy2api/releases/latest/download/latest-{{target}}-{{arch}}.json",
+        "https://github.com/bringCool/buddy2api/releases/latest/download/latest-macos-{{arch}}.json"
       ]
     }
   }

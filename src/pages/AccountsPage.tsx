@@ -224,7 +224,7 @@ export default function AccountsPage() {
   /** 紧凑模式：卡片更小、同屏更多列；默认开启，持久化到 localStorage */
   const [compact, setCompact] = useState<boolean>(() => {
     try {
-      return localStorage.getItem("wb-switch.compact") !== "0";
+      return localStorage.getItem("buddy2api.compact") !== "0";
     } catch {
       return true;
     }
@@ -234,7 +234,7 @@ export default function AccountsPage() {
     setCompact((value) => {
       const next = !value;
       try {
-        localStorage.setItem("wb-switch.compact", next ? "1" : "0");
+        localStorage.setItem("buddy2api.compact", next ? "1" : "0");
       } catch {
         /* 存储不可用时静默 */
       }

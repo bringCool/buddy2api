@@ -15,7 +15,7 @@ npm run build:app:release  # 构建 release .app + 签名更新包
 
 ## 发布新版本
 
-签名密钥（自动更新用）存放于 `~/.wb-switch/wb-switch-updater.key`，构建脚本通过
+签名密钥（自动更新用）存放于 `~/.buddy2api/buddy2api-updater.key`，构建脚本通过
 `TAURI_SIGNING_PRIVATE_KEY` 注入。发布新版本时：
 
 1. `npm run build:app:release` 生成 `.app.tar.gz` + `.sig`（Windows NSIS 构建会额外生成当前版本的 `*_x64-setup.exe` + `.exe.sig`）。CI 会先清掉 `target/**/release/bundle`，避免 cargo cache 把旧安装包带进 Release。
@@ -27,7 +27,7 @@ npm run build:app:release  # 构建 release .app + 签名更新包
 ### npm 版（webui）发布
 
 1. 编译 server 二进制并上传 GitHub Release（`.github/workflows/build.yml` 自动执行）
-2. `cd npm && npm publish`（包名 `workbuddy-switch`，postinstall 按平台从 Release 下载二进制）
+2. `cd npm && npm publish`（包名 `buddy2api`，postinstall 按平台从 Release 下载二进制）
 
 ## 目录结构
 
@@ -35,10 +35,10 @@ npm run build:app:release  # 构建 release .app + 签名更新包
 src-tauri/
   src/
     commands.rs      # Tauri command 薄包装（对应 Python 版 HTTP API）
-    modules/         # 已抽离到 crates/wb-switch-core（三宿主复用）
+    modules/         # 已抽离到 crates/buddy2api-core（三宿主复用）
 crates/
-  wb-switch-core/    # 核心逻辑：account/auth_file/oauth/process/switch/session/checkin/refresh/update/config
-  wb-switch-server/  # HTTP server + CLI：axum API + rust-embed 前端
+  buddy2api-core/    # 核心逻辑：account/auth_file/oauth/process/switch/session/checkin/refresh/update/config
+  buddy2api-server/  # HTTP server + CLI：axum API + rust-embed 前端
 src/                 # 前端：components/pages/lib（api.ts 双通道：Tauri invoke / HTTP fetch）
 npm/                 # npm 包：package.json + bin + scripts/install.js
 ```

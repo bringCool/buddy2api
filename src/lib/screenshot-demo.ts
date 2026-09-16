@@ -375,8 +375,8 @@ function demoTokenSession(key: string, title: string, project: string, input: nu
 function demoTokenRequests(scale: number): TokenStatsRequestRow[] {
   const models = ["deepseek-v4-flash", "deepseek-v4-flash", "kimi-k3-1", "deepseek-v4-flash", "glm-5.2"];
   const sessions = [
-    { project: "wb-switch-rust", sessionId: "token-stats-dashboard", title: "完善 Token 统计仪表盘与本地用量分析" },
-    { project: "wb-switch-rust", sessionId: "account-card-redesign", title: "统一账号卡片视觉和交互" },
+    { project: "buddy2api", sessionId: "token-stats-dashboard", title: "完善 Token 统计仪表盘与本地用量分析" },
+    { project: "buddy2api", sessionId: "account-card-redesign", title: "统一账号卡片视觉和交互" },
     { project: "my-code-teams", sessionId: "settings-agent-acp", title: "设计 Agent 与 ACP 管理设置" },
     { project: "LetterTotTown", sessionId: "character-audio", title: "补全角色成语双音频" },
   ];
@@ -423,7 +423,7 @@ function demoTokenSource(source: TokenStatsSource["source"], scale: number): Tok
     return demoTokenGroup(`${day}-${hour}`, Math.round(720_000 * active * scale), Math.round(41_000 * active * scale), Math.round(610_000 * active * scale), 0, Math.max(1, Math.round(6 * active * scale)));
   });
   const projects = [
-    demoTokenGroup("wb-switch-rust", 42_800_000 * scale, 2_400_000 * scale, 37_100_000 * scale, 420_000 * scale, Math.round(148 * scale)),
+    demoTokenGroup("buddy2api", 42_800_000 * scale, 2_400_000 * scale, 37_100_000 * scale, 420_000 * scale, Math.round(148 * scale)),
     demoTokenGroup("my-code-teams", 25_600_000 * scale, 1_650_000 * scale, 21_900_000 * scale, 260_000 * scale, Math.round(96 * scale)),
     demoTokenGroup("LetterTotTown", 11_900_000 * scale, 920_000 * scale, 9_700_000 * scale, 110_000 * scale, Math.round(51 * scale)),
   ];
@@ -433,10 +433,10 @@ function demoTokenSource(source: TokenStatsSource["source"], scale: number): Tok
     demoTokenGroup("glm-5.2", 6_600_000 * scale, 630_000 * scale, 5_400_000 * scale, 80_000 * scale, Math.round(24 * scale)),
   ];
   const sessions = [
-    demoTokenSession("wb-switch-rust · token-stats-dashboard", "完善 Token 统计仪表盘与本地用量分析", "wb-switch-rust", 18_700_000 * scale, 1_050_000 * scale, 16_100_000 * scale, 160_000 * scale, Math.round(72 * scale)),
+    demoTokenSession("buddy2api · token-stats-dashboard", "完善 Token 统计仪表盘与本地用量分析", "buddy2api", 18_700_000 * scale, 1_050_000 * scale, 16_100_000 * scale, 160_000 * scale, Math.round(72 * scale)),
     demoTokenSession("my-code-teams · settings-agent-acp", "设计 Agent 与 ACP 管理设置", "my-code-teams", 13_200_000 * scale, 890_000 * scale, 11_300_000 * scale, 120_000 * scale, Math.round(55 * scale)),
     demoTokenSession("LetterTotTown · character-audio", "补全角色成语双音频", "LetterTotTown", 8_600_000 * scale, 640_000 * scale, 7_200_000 * scale, 80_000 * scale, Math.round(38 * scale)),
-    demoTokenSession("wb-switch-rust · account-card-redesign", "统一账号卡片视觉和交互", "wb-switch-rust", 6_300_000 * scale, 410_000 * scale, 5_400_000 * scale, 50_000 * scale, Math.round(29 * scale)),
+    demoTokenSession("buddy2api · account-card-redesign", "统一账号卡片视觉和交互", "buddy2api", 6_300_000 * scale, 410_000 * scale, 5_400_000 * scale, 50_000 * scale, Math.round(29 * scale)),
   ];
   const now = Date.now();
   return {
@@ -478,7 +478,7 @@ export function screenshotDemoResponse(command: string, args?: Record<string, un
   const cliStatus: CodeBuddyCliStatus = { configured: true, settingsPresent: true, helperPresent: true, helperSupportsAccountIds: true, activeIndex, activeAccountId: activeAccount.id, activeAccountName: activeAccount.nickname, activeAccountVariant: accountVariant(activeAccount), accountCount: demoAccounts.length, statePath: "/demo/codebuddy-cli-state.json" };
   const config = rotateConfig();
   const rotateStatus: RotateStatus = { config, cliConfigured: true, activeAccountId: demoAccounts[0].id, activeAccountName: demoAccounts[0].nickname, lastCheckAt: atLocalTime(0, 9, 30), lastSwitchAt: atLocalTime(1, 16, 20) };
-  const githubConfig: GithubConfig = { owner: "zhangjia", repo: "wb-switch", proxy: "" };
+  const githubConfig: GithubConfig = { owner: "zhangjia", repo: "buddy2api", proxy: "" };
   const proxyStatus: ProxyStatus = { enabled: true, baseUrl: "/v1", config: { enabled: true }, activeAccount: activeAccount };
   switch (command) {
     // 档位随请求回显：演示数据本身只有国内版账号，国际版展示空状态。
@@ -541,7 +541,7 @@ export function screenshotDemoResponse(command: string, args?: Record<string, un
     case "get_github_config": return githubConfig;
     case "get_proxy_config": return proxyStatus;
     case "save_proxy_config": return { ...proxyStatus, enabled: Boolean((args?.config as { enabled?: boolean } | undefined)?.enabled), config: { enabled: Boolean((args?.config as { enabled?: boolean } | undefined)?.enabled) } };
-    case "check_update": return { ok: true, current: "0.1.24", latest: "0.1.25", latestTag: "v0.1.25", hasUpdate: true, releaseName: "更新提示演示", releaseUrl: "https://github.com/changexbc/workbuddy-switch/releases/tag/v0.1.25" };
+    case "check_update": return { ok: true, current: "0.1.24", latest: "0.1.25", latestTag: "v0.1.25", hasUpdate: true, releaseName: "更新提示演示", releaseUrl: "https://github.com/bringCool/buddy2api/releases/tag/v0.1.25" };
     case "get_launch_at_login_enabled": return true;
     case "switch_progress": return { running: false, progress: null };
     default: throw new Error(`演示模式缺少只读数据: ${command}`);

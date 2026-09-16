@@ -38,43 +38,43 @@ jobs:
                   "name": "mac-arm64",
                   "os": "macos-14",
                   "target": "aarch64-apple-darwin",
-                  "cli_bin": "wb-switch-darwin-arm64",
+                  "cli_bin": "buddy2api-darwin-arm64",
                   "platform_tag": "darwin-arm64",
                   "bundles": "app",
                   "update_os": "macos",
                   "update_arch": "aarch64",
                   "update_bundle": "macos",
-                  "update_archive_name": "workbuddy-switch-macos-aarch64.app.tar.gz",
+                  "update_archive_name": "buddy2api-macos-aarch64.app.tar.gz",
               },
               {
                   "name": "mac-x64",
                   "os": "macos-14",
                   "target": "x86_64-apple-darwin",
-                  "cli_bin": "wb-switch-darwin-x64",
+                  "cli_bin": "buddy2api-darwin-x64",
                   "platform_tag": "darwin-x64",
                   "bundles": "app",
                   "update_os": "macos",
                   "update_arch": "x86_64",
                   "update_bundle": "macos",
-                  "update_archive_name": "workbuddy-switch-macos-x86_64.app.tar.gz",
+                  "update_archive_name": "buddy2api-macos-x86_64.app.tar.gz",
               },
               {
                   "name": "win-x64",
                   "os": "windows-latest",
                   "target": "x86_64-pc-windows-msvc",
-                  "cli_bin": "wb-switch-win32-x64.exe",
+                  "cli_bin": "buddy2api-win32-x64.exe",
                   "platform_tag": "win32-x64",
                   "bundles": "nsis",
                   "update_os": "windows",
                   "update_arch": "x86_64",
                   "update_bundle": "nsis",
-                  "update_archive_name": "workbuddy-switch-windows-x86_64-setup.exe",
+                  "update_archive_name": "buddy2api-windows-x86_64-setup.exe",
               },
               {
                   "name": "linux-x64",
                   "os": "ubuntu-latest",
                   "target": "x86_64-unknown-linux-gnu",
-                  "cli_bin": "wb-switch-linux-x64",
+                  "cli_bin": "buddy2api-linux-x64",
                   "platform_tag": "linux-x64",
                   "bundles": "deb,appimage",
                   "update_arch": "",
@@ -159,28 +159,31 @@ jobs:
       - name: Build server binary
         shell: bash
         run: |
-          cargo build -p wb-switch-server --release --target ${{ matrix.target }}
+          cargo build -p buddy2api-server --release --target ${{ matrix.target }}
           mkdir -p dist-bin
 
       # 打包本平台包并发布到 npm（CLI 二进制走 npm registry，Release 只留桌面 App）
       # 仅 tag 发布；手动触发（例如只打 Windows 试装包）不得 npm publish。
-      - name: Publish platform package
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          PKG_DIR="npm/platform/workbuddy-switch-${{ matrix.platform_tag }}"
-          # 用 tag 版本同步 platform 包版本（git 里的可能滞后）
-          VER="${GITHUB_REF_NAME#v}"
-          perl -pi -e "s/\"version\": \"[0-9.]+\"/\"version\": \"$VER\"/" "$PKG_DIR/package.json"
-          mkdir -p "$PKG_DIR/bin"
-          SRC="target/${{ matrix.target }}/release/wb-switch"
-          [ -f "$SRC.exe" ] && SRC="$SRC.exe"
-          cp "$SRC" "$PKG_DIR/bin/${{ matrix.cli_bin }}"
-          cd "$PKG_DIR"
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > .npmrc
-          npm publish --access public --registry=https://registry.npmjs.org
+      #
+      # 暂时停用：本仓库未配置 NPM_TOKEN，发布必然失败并中断构建。
+      # 需要恢复时，配置好 secrets.NPM_TOKEN 后取消下方注释即可。
+      # - name: Publish platform package
+      #   if: startsWith(github.ref, 'refs/tags/v')
+      #   shell: bash
+      #   env:
+      #     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #   run: |
+      #     PKG_DIR="npm/platform/buddy2api-${{ matrix.platform_tag }}"
+      #     # 用 tag 版本同步 platform 包版本（git 里的可能滞后）
+      #     VER="${GITHUB_REF_NAME#v}"
+      #     perl -pi -e "s/\"version\": \"[0-9.]+\"/\"version\": \"$VER\"/" "$PKG_DIR/package.json"
+      #     mkdir -p "$PKG_DIR/bin"
+      #     SRC="target/${{ matrix.target }}/release/buddy2api"
+      #     [ -f "$SRC.exe" ] && SRC="$SRC.exe"
+      #     cp "$SRC" "$PKG_DIR/bin/${{ matrix.cli_bin }}"
+      #     cd "$PKG_DIR"
+      #     printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > .npmrc
+      #     npm publish --access public --registry=https://registry.npmjs.org
 
       # 桌面 App（mac app / nsis exe / deb + AppImage）
       - name: Build desktop app
@@ -200,13 +203,13 @@ jobs:
           echo "bundle after build:"
           find "$BUNDLE_ROOT" -type f | sort || true
           if [ "${{ matrix.bundles }}" = "nsis" ]; then
-            STALE=$(find "$BUNDLE_ROOT" -type f -name '*-setup.exe' ! -name "workbuddy-switch_${VER}_x64-setup.exe" || true)
+            STALE=$(find "$BUNDLE_ROOT" -type f -name '*-setup.exe' ! -name "buddy2api_${VER}_x64-setup.exe" || true)
             if [ -n "$STALE" ]; then
               echo "error: stale Windows installer still present:" >&2
               printf '%s\n' "$STALE" >&2
               exit 1
             fi
-            test -f "$BUNDLE_ROOT/nsis/workbuddy-switch_${VER}_x64-setup.exe"
+            test -f "$BUNDLE_ROOT/nsis/buddy2api_${VER}_x64-setup.exe"
           fi
           find "$BUNDLE_ROOT" -type f \
             \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*.deb' \
@@ -214,8 +217,8 @@ jobs:
             -exec cp {} dist-bin/ \;
           # mac：纯命令行打 dmg（CI 无 Finder，Tauri 自带的 bundle_dmg.sh 会失败）
           if [ "${{ matrix.bundles }}" = "app" ]; then
-            sh scripts/make-dmg.sh "$VER" "${{ matrix.update_arch }}" "target/${{ matrix.target }}/release/bundle/macos/workbuddy-switch.app"
-            cp "workbuddy-switch_${VER}_${{ matrix.update_arch }}.dmg" dist-bin/
+            sh scripts/make-dmg.sh "$VER" "${{ matrix.update_arch }}" "target/${{ matrix.target }}/release/bundle/macos/buddy2api.app"
+            cp "buddy2api_${VER}_${{ matrix.update_arch }}.dmg" dist-bin/
           fi
 
       - name: Generate updater manifest
@@ -234,7 +237,7 @@ jobs:
           echo "updater bundle dir: $BUNDLE_DIR (version $VER)"
           ls -la "$BUNDLE_DIR" || true
           if [ "$UPDATE_OS" = "windows" ]; then
-            ARCHIVE="$BUNDLE_DIR/workbuddy-switch_${VER}_x64-setup.exe"
+            ARCHIVE="$BUNDLE_DIR/buddy2api_${VER}_x64-setup.exe"
           else
             ARCHIVE="$(find "$BUNDLE_DIR" -maxdepth 1 -type f -name '*.app.tar.gz' | sort)"
             COUNT=$(printf '%s\n' "$ARCHIVE" | sed '/^$/d' | wc -l | tr -d ' ')
@@ -251,7 +254,7 @@ jobs:
           cp "$ARCHIVE" "dist-bin/$UPDATE_ARCHIVE_NAME"
           cp "$ARCHIVE.sig" "dist-bin/$UPDATE_ARCHIVE_NAME.sig"
           if [ "$UPDATE_OS" = "windows" ]; then
-            cmp -s "dist-bin/$UPDATE_ARCHIVE_NAME" "dist-bin/workbuddy-switch_${VER}_x64-setup.exe"
+            cmp -s "dist-bin/$UPDATE_ARCHIVE_NAME" "dist-bin/buddy2api_${VER}_x64-setup.exe"
           fi
           UPDATE_VERSION="$VER" sh scripts/gen-update-json.sh
           MANIFEST="$BUNDLE_DIR/latest-${UPDATE_OS}-${UPDATE_ARCH}.json"
@@ -265,23 +268,26 @@ jobs:
           if-no-files-found: error
 
   # 所有平台包发布成功后，发布主包（optionalDependencies 引用平台包）
-  publish-main:
-    name: Publish npm main package
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Publish main package
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          cd npm
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > .npmrc
-          npm publish --access public --registry=https://registry.npmjs.org
+  #
+  # 暂时停用：本仓库未配置 NPM_TOKEN，发布必然失败并中断构建。
+  # 需要恢复时，配置好 secrets.NPM_TOKEN 后取消下方注释即可。
+  # publish-main:
+  #   name: Publish npm main package
+  #   needs: build
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #     - name: Publish main package
+  #       env:
+  #         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  #       run: |
+  #         cd npm
+  #         printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > .npmrc
+  #         npm publish --access public --registry=https://registry.npmjs.org
 
   release:
     name: Publish release assets

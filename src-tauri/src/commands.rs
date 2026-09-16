@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use tauri::Emitter;
-use wb_switch_core::modules::{
+use buddy2api_core::modules::{
     account, auth_file, checkin, codebuddy_cli, codebuddy_cn_ide, codebuddy_ide, credit_usage,
     credits, export_import, oauth, openai_proxy, process, refresh, rotate, session, switch,
     token_stats, travel,
@@ -294,7 +294,7 @@ pub fn check_auth_permission(variant: Option<String>) -> Value {
             "variant": variant.as_str(),
             "error": e.to_string(),
             "dir": path.parent().map(|p| p.to_string_lossy().to_string()),
-            "hint": "请在 系统设置→隐私与安全性 中授权：优先「App 管理」开启 wb-switch，若没有则去「完全磁盘访问」把 wb-switch 拖进去；授权后需重启 App 生效",
+            "hint": "请在 系统设置→隐私与安全性 中授权：优先「App 管理」开启 buddy2api，若没有则去「完全磁盘访问」把 buddy2api 拖进去；授权后需重启 App 生效",
         }),
     }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "wb-switch-rust",
+  "name": "buddy2api",
   "private": true,
   "version": "0.1.39",
   "type": "module",
@@ -7,13 +7,13 @@
     "dev": "vite",
     "dev:demo": "VITE_DEMO_MODE=1 vite",
     "dev:screenshot": "VITE_DEMO_MODE=1 vite",
-    "tauri:dev:screenshot": "WB_SWITCH_SCREENSHOT_DEMO=1 VITE_DEMO_MODE=1 tauri dev",
+    "tauri:dev:screenshot": "BUDDY2API_SCREENSHOT_DEMO=1 VITE_DEMO_MODE=1 tauri dev",
     "build": "tsc && vite build",
     "build:demo": "tsc && VITE_DEMO_MODE=1 VITE_PAGES_DEMO=1 vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:app": "TAURI_SIGNING_PRIVATE_KEY=\"$(cat \"$HOME/.wb-switch/wb-switch-updater.key\")\" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=wb-switch-dev npm run tauri build -- --debug --bundles app; sh scripts/fix-app.sh",
-    "build:app:release": "TAURI_SIGNING_PRIVATE_KEY=\"$(cat \"$HOME/.wb-switch/wb-switch-updater.key\")\" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=wb-switch-dev npm run tauri build -- --bundles app; sh scripts/fix-app.sh"
+    "build:app": "TAURI_SIGNING_PRIVATE_KEY=\"$(cat \"$HOME/.buddy2api/buddy2api-updater.key\")\" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=buddy2api-dev npm run tauri build -- --debug --bundles app; sh scripts/fix-app.sh",
+    "build:app:release": "TAURI_SIGNING_PRIVATE_KEY=\"$(cat \"$HOME/.buddy2api/buddy2api-updater.key\")\" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=buddy2api-dev npm run tauri build -- --bundles app; sh scripts/fix-app.sh"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",

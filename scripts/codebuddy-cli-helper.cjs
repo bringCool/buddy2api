@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// CodeBuddy CLI apiKeyHelper for wb-switch.
+// CodeBuddy CLI apiKeyHelper for buddy2api.
 //
 // 只把当前选中账号的 token（Bearer xxx）打印到 stdout，CodeBuddy CLI 会把它
-// 作为 Authorization 头使用。当前选中账号由 wb-switch 写入
+// 作为 Authorization 头使用。当前选中账号由 buddy2api 写入
 // ~/.codebuddy-rotate/state.json（activeAccountId / active 索引）。
 //
 // 用 Node 实现：CodeBuddy CLI 本身就是 Node 应用（npm 安装，shebang 同样是
@@ -16,11 +16,11 @@ const path = require("path");
 
 const rotateDir = process.env.CODEBUDDY_ROTATE_DIR || path.join(os.homedir(), ".codebuddy-rotate");
 const accountsFile =
-  process.env.WB_SWITCH_ACCOUNTS_FILE || path.join(os.homedir(), ".wb-switch", "accounts.json");
+  process.env.BUDDY2API_ACCOUNTS_FILE || path.join(os.homedir(), ".buddy2api", "accounts.json");
 const stateFile = path.join(rotateDir, "state.json");
 
 function fail(message) {
-  process.stderr.write(`wb-switch: ${message}\n`);
+  process.stderr.write(`buddy2api: ${message}\n`);
   process.exit(1);
 }
 

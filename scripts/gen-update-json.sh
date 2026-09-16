@@ -7,8 +7,8 @@
 set -e
 cd "$(dirname "$0")/.." || exit 1
 
-OWNER="${1:-changexbc}"
-REPO="${2:-workbuddy-switch}"
+OWNER="${1:-bringCool}"
+REPO="${2:-buddy2api}"
 VERSION="${UPDATE_VERSION:-$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')}"
 UPDATE_OS="${UPDATE_OS:-macos}"
 UPDATE_ARCH="${UPDATE_ARCH:-aarch64}"

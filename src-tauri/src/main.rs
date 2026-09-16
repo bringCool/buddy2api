@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    wb_switch_rust_lib::run()
+    buddy2api_lib::run()
 }

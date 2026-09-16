@@ -70,7 +70,7 @@ type RangeKey = "30d" | "today" | "7d" | "month";
 type OverviewRangeKey = "today" | "7d" | "30d" | "total";
 type DistributionKey = "projects" | "models";
 
-const TOKEN_SOURCE_STORAGE_KEY = "wb-switch:token-stats:source";
+const TOKEN_SOURCE_STORAGE_KEY = "buddy2api:token-stats:source";
 const RANKING_LIMIT = 10;
 const REQUEST_PAGE_SIZE = 50;
 

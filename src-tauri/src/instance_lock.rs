@@ -71,7 +71,7 @@ pub(crate) fn try_lock_path(path: &Path) -> LockAttempt {
 }
 
 fn lock_path() -> PathBuf {
-    wb_switch_core::modules::config::store_dir().join("instance.lock")
+    buddy2api_core::modules::config::store_dir().join("instance.lock")
 }
 
 /// 落点调用：明确被占用则退出，其余情况一律继续。锁必须 `manage` 进 App 状态，
@@ -138,7 +138,7 @@ mod tests {
     impl TempLockPath {
         fn new() -> Self {
             let dir = std::env::temp_dir()
-                .join(format!("wb-switch-instance-lock-{}", uuid::Uuid::new_v4()));
+                .join(format!("buddy2api-instance-lock-{}", uuid::Uuid::new_v4()));
             let path = dir.join("instance.lock");
             Self { dir, path }
         }
