@@ -5,3 +5,16 @@ $:
       services:
         - vscode
         - docker
+
+main:
+  push:
+    - imports:
+        - https://cnb.cool/BringSecret/Keys/-/blob/main/ThirdParty/Github.yml
+      stages:
+        - name: sync to github
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/bringCool/workbuddy-switch.git
+            auth_type: https
+            username: ${UserName}
+            password: ${GH_TOKEN}
