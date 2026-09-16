@@ -1068,31 +1068,27 @@ mod tests {
         assert_eq!(value["label"], "untraveled");
     }
 
-    /// 国际版账号：depart 直接短路，不发请求、不写缓存。
+    /// 两档位默认开放成长中心：国际版账号也进入候选，不再按档位短路。
     #[tokio::test]
-    async fn ai_account_depart_is_skipped_without_request() {
-        let ai = json!({"id": "ai-1", "uid": "u-1", "variant": "ai", "access_token": "t"});
-        let result = depart_travel_for_account(&ai).await;
-        assert_eq!(result["status"], "skipped");
-        assert_eq!(result["reason"], "unsupported_variant");
-        assert_eq!(result["ok"], Value::Null);
+    async fn both_variants_are_travel_capable() {
+        let ai = json!({"id": "ai-1", "uid": "u-1", "variant": "ai", "access_token": ""});
+        // 空 token 时不会真正发请求，但档位本身不再被短路。
+        assert!(variant_of(&ai).supports_travel());
 
-        // 国内版账号（缺档位字段）不会走短路。
         let cn = json!({"id": "cn-1", "uid": "u-2", "access_token": ""});
         assert!(variant_of(&cn).supports_travel());
     }
 
-    /// 档位过滤：国际版账号不进入旅行周期候选。
+    /// 档位过滤：两档位账号都进入旅行周期候选。
     #[test]
-    fn travel_capable_accounts_exclude_unsupported_variants() {
+    fn travel_capable_accounts_include_all_variants() {
         let accounts = vec![
             json!({"id": "cn-1"}),
             json!({"id": "ai-1", "variant": "ai"}),
             json!({"id": "ai-2", "domain": "www.workbuddy.ai"}),
         ];
         let kept = travel_capable_accounts(accounts);
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0]["id"], "cn-1");
+        assert_eq!(kept.len(), 3);
     }
 
     #[test]

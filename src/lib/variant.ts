@@ -42,14 +42,14 @@ export function accountVariant(account: { variant?: WbVariant } | null | undefin
   return normalizeVariant(account?.variant);
 }
 
-/** 成长中心（派猫猫旅行）仅国内版开放；国际版不请求、不展示。 */
-export function variantSupportsTravel(variant: WbVariant): boolean {
-  return variant !== "ai";
+/** 成长中心（派猫猫旅行）两档位都开放；官方是否真正开放由接口返回决定。 */
+export function variantSupportsTravel(_variant: WbVariant): boolean {
+  return true;
 }
 
-/** 自动签到仅国内版开放；国际版签到接口未开放（后端已按 inactive 归类），不展示入口。 */
-export function variantSupportsCheckin(variant: WbVariant): boolean {
-  return variant !== "ai";
+/** 自动签到两档位都开放；官方未开放时后端按 inactive 归类，不计失败。 */
+export function variantSupportsCheckin(_variant: WbVariant): boolean {
+  return true;
 }
 
 /** 国际版 Tab 切 CodeBuddy.app；国内版 Tab 仍切 CodeBuddy CN。 */

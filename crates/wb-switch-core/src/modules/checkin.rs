@@ -291,9 +291,22 @@ pub async fn checkin_account(account: &Value) -> Value {
     });
     let res = perform_checkin(&acc).await;
     if res.get("inactive").and_then(|v| v.as_bool()) == Some(true) {
-        // inactive 语义（新增）：既不能记为成功，也不应让统计页计为失败，
-        // 因此**不写签到日志**（写了必然被算作 success 或 failed 之一），
-        // 也不做任何重试；结果对象显式带 inactive: true 供上层区分。
+        // inactive 语义：官方该档位未开放签到，既不算成功也不算失败。写入一条
+        // `inactive` 日志作为「今天已处理」标记（不报错、不重试），并让待签到
+        // 判定把 inactive 视作已满足，避免托盘永远停在「可签到」。
+        let mut entry_map = json!({
+            "result": "inactive",
+            "ts": entry["ts"],
+            "accountId": entry["accountId"],
+            "email": entry["email"],
+            "variant": entry["variant"],
+        });
+        if let Some(message) = res.get("message").cloned() {
+            if !message.is_null() {
+                entry_map["message"] = message;
+            }
+        }
+        add_checkin_log(&entry_map);
         return json!({
             "result": "inactive",
             "inactive": true,
@@ -403,7 +416,9 @@ pub fn accounts_checked_in_today(accounts: &[Value], logs: &[Value], today: &str
             return false;
         };
         latest_today_result(logs, id, today)
-            .map(|result| result == "success" || result == "already")
+            // inactive = 官方该档位未开放签到，已处理但不算成功，不应让托盘
+            // 永远停在「可签到」。
+            .map(|result| result == "success" || result == "already" || result == "inactive")
             .unwrap_or(false)
     })
 }
@@ -690,9 +705,9 @@ mod tests {
         assert!(!accounts_checked_in_today(&accounts, &[], "2026-08-19"));
     }
 
-    /// 国际版账号不会有签到日志，不得让托盘永远显示「可签到」。
+    /// 两档位都计入待签到集合：国际版入口默认开放，未签到时同样需要提示。
     #[test]
-    fn checked_in_today_ignores_variants_without_checkin() {
+    fn checked_in_today_counts_all_variants() {
         let today = date_str(Some(1_700_000_000_000));
         let logs = vec![json!({
             "accountId": "cn-1",
@@ -700,23 +715,31 @@ mod tests {
             "ts": 1_700_000_000_000_i64
         })];
 
-        // 仅国际版账号：没有待签到项，不再提示「可签到」。
+        // 仅国际版账号、无日志：仍需签到。
         let ai_only = vec![json!({"id": "ai-1", "variant": "ai"})];
-        assert!(accounts_checked_in_today(&ai_only, &[], &today));
+        assert!(!accounts_checked_in_today(&ai_only, &[], &today));
 
-        // 国内版已签 + 国际版无日志：国际版不拖累判定。
+        // 国内版已签 + 国际版无日志：国际版未签，判定为未完成。
         let mixed = vec![
             json!({"id": "cn-1", "variant": "cn"}),
             json!({"id": "ai-1", "variant": "ai"}),
         ];
-        assert!(accounts_checked_in_today(&mixed, &logs, &today));
+        assert!(!accounts_checked_in_today(&mixed, &logs, &today));
 
-        // 国内版未签 + 国际版无日志：仍需签到。
-        let pending_cn = vec![
-            json!({"id": "cn-2", "variant": "cn"}),
-            json!({"id": "ai-1", "variant": "ai"}),
+        // 国际版有 today 的 inactive 日志：官方未开放，视为已处理，不再提示。
+        let ai_inactive_logs = vec![json!({
+            "accountId": "ai-1",
+            "result": "inactive",
+            "ts": 1_700_000_000_000_i64,
+            "variant": "ai"
+        })];
+        assert!(accounts_checked_in_today(&ai_only, &ai_inactive_logs, &today));
+        assert!(accounts_checked_in_today(&mixed, &ai_inactive_logs, &today) == false);
+        let both_logs = vec![
+            json!({"accountId": "cn-1", "result": "success", "ts": 1_700_000_000_000_i64}),
+            json!({"accountId": "ai-1", "result": "inactive", "ts": 1_700_000_000_000_i64}),
         ];
-        assert!(!accounts_checked_in_today(&pending_cn, &logs, &today));
+        assert!(accounts_checked_in_today(&mixed, &both_logs, &today));
     }
 
     #[test]

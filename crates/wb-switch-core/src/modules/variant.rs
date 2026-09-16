@@ -274,19 +274,20 @@ impl WbVariant {
     // 能力声明
     // -----------------------------------------------------------------------
 
-    /// 成长中心（派猫猫旅行）仅国内版开放。
+    /// 成长中心（派猫猫旅行）两档位都开放。
+    ///
+    /// 官方是否真正开放由接口返回决定；未开放时按 `unsupported` 归类，不计为失败。
     pub fn supports_travel(self) -> bool {
-        matches!(self, Self::Cn)
+        true
     }
 
     /// 该档位的账号是否计入「今天是否全部已签到」的**待签到集合**。
     ///
-    /// **不门控请求**：签到请求按账号遍历下发，国际版账号仍会尝试 `daily-checkin`
-    /// 并被归类为 `inactive`（见 `checkin::perform_checkin`）。本方法唯一的消费点是
-    /// `checkin::accounts_checked_in_today`：国际版签到未开放、永远不写签到日志，
-    /// 若计入待签到集合，托盘会一直显示「可签到」。
+    /// 两档位都计入：国际版入口默认开放，签到请求照常下发。官方未开放时
+    /// `checkin::perform_checkin` 会归类为 `inactive`（不计失败），不写签到日志；
+    /// 因此不会让托盘长期显示「可签到」。
     pub fn counts_as_pending_checkin(self) -> bool {
-        matches!(self, Self::Cn)
+        true
     }
 
     /// 是否支持切换时复制会话（能力探测，见 `session::session_copy_supported_at`）。
@@ -473,12 +474,12 @@ mod tests {
 
     #[test]
     fn capability_declarations() {
+        // 两档位默认开放成长中心与签到；官方是否真正开放由接口返回决定，
+        // 未开放时按 inactive/unsupported 归类（见 checkin/travel），不计失败。
         assert!(WbVariant::Cn.supports_travel());
-        assert!(!WbVariant::Ai.supports_travel());
-        // 国际版无签到活动：不参与「今天是否全部已签到」判定（托盘语义）。
-        // 注意：该方法不门控签到请求，国际版账号仍会尝试 daily-checkin。
+        assert!(WbVariant::Ai.supports_travel());
         assert!(WbVariant::Cn.counts_as_pending_checkin());
-        assert!(!WbVariant::Ai.counts_as_pending_checkin());
+        assert!(WbVariant::Ai.counts_as_pending_checkin());
     }
 
     #[test]
