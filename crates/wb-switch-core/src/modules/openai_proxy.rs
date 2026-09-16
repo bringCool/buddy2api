@@ -1,25 +1,33 @@
 //! 2API：本地 OpenAI 兼容代理。
 //!
-//! 对外暴露 `/v1/chat/completions` 与 `/v1/models`，用账号库中**当前激活账号**
-//! 的凭据注入鉴权头后透传到 WorkBuddy 官方 OpenAI 兼容接口。上游本身就是标准
-//! OpenAI 协议（实测 `workbuddy.har`），因此**不做任何格式转换**，只做
-//! 「选账号 + 注入头 + 双向流透传」。
+//! 对外暴露 `/v1/chat/completions` 与 `/v1/models`，用账号库中的账号（默认当前
+//! 激活账号，路由开启时按策略选号）注入鉴权头后透传到 WorkBuddy 官方 OpenAI
+//! 兼容接口。上游本身就是标准 OpenAI 协议（实测 `workbuddy.har`），因此
+//! **不做任何格式转换**，只做「选账号 + 注入头 + 双向流透传」。
 //!
 //! 域已统一：国内 `https://www.workbuddy.cn`、国际 `https://www.workbuddy.ai`
 //! （见 `WbVariant::api_endpoint`）。聊天基址为 `{api_endpoint}/v2`。
 
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 
 use crate::modules::account;
 use crate::modules::account::get_str;
-use crate::modules::config::{atomic_write, home_dir, http_client_streaming, store_dir};
+use crate::modules::config::{atomic_write, home_dir, http_client_streaming, now_ms, store_dir};
 use crate::modules::variant::WbVariant;
 
 /// 聊天接口默认池前缀：`cn/` 锁国内站，`intl/` 锁国际站，无前缀走默认池。
 pub const PREFIX_CN: &str = "cn/";
 pub const PREFIX_INTL: &str = "intl/";
+
+/// 熔断：连续失败阈值与冷却时长。
+const BREAKER_FAILURE_THRESHOLD: u32 = 3;
+const BREAKER_COOLDOWN_MS: i64 = 5 * 60 * 1000;
+/// 会话粘性 TTL。
+const SESSION_TTL_MS: i64 = 30 * 60 * 1000;
 
 /// 解析后的模型请求：`site` 为 `None` 表示默认池（跨站调度）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,23 +124,219 @@ pub fn upstream_headers(account: &Value) -> HashMap<String, String> {
         headers.insert("Authorization".to_string(), format!("Bearer {token}"));
     }
     headers.insert("X-Product".to_string(), "SaaS".to_string());
-    headers.insert(
-        "Content-Type".to_string(),
-        "application/json".to_string(),
-    );
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
     if let Some(uid) = get_str(account, "uid") {
         headers.insert("X-User-Id".to_string(), uid);
     }
     if let Some(domain) = get_str(account, "domain") {
         headers.insert("X-Domain".to_string(), domain);
     }
-    if let Some(eid) = get_str(account, "enterpriseId")
-        .or_else(|| get_str(account, "enterprise_id"))
+    if let Some(eid) = get_str(account, "enterpriseId").or_else(|| get_str(account, "enterprise_id"))
     {
         headers.insert("X-Enterprise-Id".to_string(), eid.clone());
         headers.insert("X-Tenant-Id".to_string(), eid);
     }
     headers
+}
+
+/// 账号是否有可用于代理的 token。
+fn has_token(account: &Value) -> bool {
+    get_str(account, "access_token").is_some()
+}
+
+// ---------------------------------------------------------------------------
+// 账号选择：站点过滤 + 熔断 + 会话粘性 + 倍率最少 + 轮询
+// ---------------------------------------------------------------------------
+
+/// 熔断状态（按账号 id）。
+#[derive(Default, Clone)]
+struct BreakerState {
+    failures: u32,
+    cooldown_until: i64,
+}
+
+#[derive(Default)]
+struct RouterState {
+    /// round-robin 游标，按站点分组。
+    cursor: HashMap<&'static str, usize>,
+    /// 熔断状态，按账号 id。
+    breakers: HashMap<String, BreakerState>,
+    /// 会话粘性：session_key → (account_id, expire_at)。
+    sticky: HashMap<String, (String, i64)>,
+}
+
+static ROUTER: OnceLock<Mutex<RouterState>> = OnceLock::new();
+
+fn router() -> &'static Mutex<RouterState> {
+    ROUTER.get_or_init(|| Mutex::new(RouterState::default()))
+}
+
+fn account_key(account: &Value) -> String {
+    get_str(account, "id").unwrap_or_default()
+}
+
+/// 选择可用账号。
+///
+/// `site` 锁定站点（前缀请求），`None` 表示默认池（两站候选）。
+/// `session_key` 命中粘性时固定同号；否则按站点轮询。冷却中的账号被跳过。
+pub fn select_account(
+    accounts: &[Value],
+    site: Option<WbVariant>,
+    session_key: Option<&str>,
+    now: i64,
+) -> Option<Value> {
+    let candidates: Vec<&Value> = accounts
+        .iter()
+        .filter(|acc| has_token(acc))
+        .filter(|acc| match site {
+            Some(v) => WbVariant::from_account(acc) == v,
+            None => true,
+        })
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let mut state = router().lock().unwrap();
+
+    // 会话粘性：命中且账号仍可用则复用。
+    if let Some(key) = session_key.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some((account_id, expire_at)) = state.sticky.get(key).cloned() {
+            if expire_at > now {
+                if let Some(acc) = candidates
+                    .iter()
+                    .find(|acc| account_key(acc) == account_id)
+                    .copied()
+                {
+                    return Some(acc.clone());
+                }
+            }
+            state.sticky.remove(key);
+        }
+    }
+
+    // 熔断过滤。
+    let healthy: Vec<&Value> = candidates
+        .iter()
+        .copied()
+        .filter(|acc| {
+            state
+                .breakers
+                .get(&account_key(acc))
+                .map(|b| b.cooldown_until <= now)
+                .unwrap_or(true)
+        })
+        .collect();
+    // 全部熔断时兜底用原候选，避免完全不可用（冷却窗口外重试）。
+    let pool = if healthy.is_empty() { candidates } else { healthy };
+
+    // 倍率最少优先：按账号对应档位已知的最低倍率排序（同倍率保持给定顺序）。
+    // 倍率通过 `account_min_credit` 读取缓存；无倍率视为不优先。
+    let mut indexed: Vec<(usize, &Value)> = pool.into_iter().enumerate().collect();
+    indexed.sort_by(|(ia, a), (ib, b)| {
+        let ca = account_min_credit(a);
+        let cb = account_min_credit(b);
+        match (ca, cb) {
+            (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal).then(ia.cmp(ib)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => ia.cmp(ib),
+        }
+    });
+
+    // 在最小倍率组内轮询：只取与最小倍率相同的一组做 round-robin。
+    let best_credit = indexed.first().and_then(|(_, a)| account_min_credit(a));
+    let group: Vec<&Value> = indexed
+        .iter()
+        .filter(|(_, a)| account_min_credit(a) == best_credit)
+        .map(|(_, a)| *a)
+        .collect();
+
+    let cursor_key = match site {
+        Some(v) => v.as_str(),
+        None => "all",
+    };
+    let cursor = state.cursor.entry(cursor_key).or_insert(0);
+    let picked = group[*cursor % group.len()].clone();
+    *cursor = cursor.wrapping_add(1);
+
+    // 写入粘性。
+    if let Some(key) = session_key.map(str::trim).filter(|s| !s.is_empty()) {
+        state
+            .sticky
+            .insert(key.to_string(), (account_key(&picked), now + SESSION_TTL_MS));
+        // 顺带清理过期粘性，避免无限增长。
+        state.sticky.retain(|_, (_, expire)| *expire > now);
+    }
+
+    Some(picked)
+}
+
+/// 记录一次请求结果，用于熔断。
+///
+/// `account_failure = true` 表示账号级失败（401/额度/风控），才计入熔断；
+/// 网络/5xx/超时不算。成功则清零。
+pub fn record_result(account: &Value, account_failure: bool, now: i64) {
+    let key = account_key(account);
+    if key.is_empty() {
+        return;
+    }
+    let mut state = router().lock().unwrap();
+    if account_failure {
+        let entry = state.breakers.entry(key.clone()).or_default();
+        entry.failures += 1;
+        if entry.failures >= BREAKER_FAILURE_THRESHOLD {
+            entry.cooldown_until = now + BREAKER_COOLDOWN_MS;
+            entry.failures = 0;
+        }
+    } else {
+        state.breakers.remove(&key);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 每个账号的倍率缓存（来自 /v3/config）
+// ---------------------------------------------------------------------------
+
+static ACCOUNT_CREDITS: OnceLock<Mutex<HashMap<String, (f64, i64)>>> = OnceLock::new();
+
+fn credits_cache() -> &'static Mutex<HashMap<String, (f64, i64)>> {
+    ACCOUNT_CREDITS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+const CREDITS_TTL_MS: i64 = 5 * 60 * 1000;
+
+/// 该账号档位已知的最低模型倍率（越小越优先）。无缓存或已过期返回 None。
+fn account_min_credit(account: &Value) -> Option<f64> {
+    let key = account_key(account);
+    let now = now_ms();
+    let mut cache = credits_cache().lock().unwrap();
+    match cache.get(&key) {
+        Some((credit, at)) if now - at < CREDITS_TTL_MS => Some(*credit),
+        Some(_) => {
+            cache.remove(&key);
+            None
+        }
+        None => None,
+    }
+}
+
+/// 根据 `/v3/config` 的模型列表更新某账号的最低倍率缓存。
+pub fn update_account_credits(account: &Value, models: &[Value]) {
+    let key = account_key(account);
+    if key.is_empty() {
+        return;
+    }
+    let min = models
+        .iter()
+        .filter_map(|m| parse_credits(m.get("credits")))
+        .fold(None::<f64>, |acc, v| Some(acc.map_or(v, |a| a.min(v))));
+    let mut cache = credits_cache().lock().unwrap();
+    if let Some(min) = min {
+        cache.insert(key, (min, now_ms()));
+    } else {
+        cache.remove(&key);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +384,10 @@ pub fn proxy_enabled() -> bool {
         .unwrap_or(true)
 }
 
+// ---------------------------------------------------------------------------
+// 账号解析
+// ---------------------------------------------------------------------------
+
 /// 当前激活账号（CodeBuddy CLI rotate state），找不到时回落账号库第一条。
 ///
 /// 读取 `~/.codebuddy-rotate/state.json` 的 `activeAccountId`；与 CLI 当前账号一致。
@@ -223,19 +431,19 @@ fn active_account_from(accounts: &[Value]) -> Option<Value> {
 pub fn account_for_site(accounts: &[Value], site: WbVariant) -> Option<Value> {
     let active = active_account_from(accounts);
     if let Some(acc) = active {
-        if WbVariant::from_account(&acc) == site
-            && get_str(&acc, "access_token").is_some()
-        {
+        if WbVariant::from_account(&acc) == site && has_token(&acc) {
             return Some(acc);
         }
     }
     accounts
         .iter()
-        .find(|acc| {
-            WbVariant::from_account(acc) == site && get_str(acc, "access_token").is_some()
-        })
+        .find(|acc| WbVariant::from_account(acc) == site && has_token(acc))
         .cloned()
 }
+
+// ---------------------------------------------------------------------------
+// 上游请求
+// ---------------------------------------------------------------------------
 
 /// 发送聊天请求，返回上游原始响应（供上层流式/非流式透传）。
 pub async fn send_chat(account: &Value, body: &Value) -> Result<reqwest::Response, String> {
@@ -277,6 +485,8 @@ pub async fn fetch_site_models(account: &Value) -> Result<Vec<Value>, String> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    // 顺带更新该账号的倍率缓存（用于路由排序）。
+    update_account_credits(account, &models);
     Ok(models)
 }
 
@@ -329,6 +539,20 @@ fn model_entry(exported_id: &str, id: &str, owned_by: &str, model: &Value) -> Va
     entry
 }
 
+    /// 路由状态是进程级全局，测试并行会互相干扰：用锁串行化并重置。
+    #[cfg(test)]
+    static ROUTER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 获取路由测试串行锁并清空状态。返回的 guard 需持有到测试结束。
+    #[cfg(test)]
+    fn reset_router_for_test() -> std::sync::MutexGuard<'static, ()> {
+        let guard = ROUTER_TEST_LOCK.lock().unwrap();
+        let mut state = router().lock().unwrap();
+        *state = RouterState::default();
+        credits_cache().lock().unwrap().clear();
+        guard
+    }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,7 +571,6 @@ mod tests {
         assert_eq!(plain.site, None);
         assert_eq!(plain.model, "deepseek-v4.1-flash");
 
-        // 前后空白容错
         assert_eq!(parse_model("  cn/hy3  ").unwrap().model, "hy3");
     }
 
@@ -356,7 +579,6 @@ mod tests {
         assert!(parse_model("").is_err());
         assert!(parse_model("cn/").is_err());
         assert!(parse_model("intl/").is_err());
-        // 带斜杠但非已知前缀 → 非法，不回落默认池
         assert!(parse_model("foo/bar").is_err());
         assert!(parse_model("openai/gpt-5.6").is_err());
     }
@@ -368,7 +590,6 @@ mod tests {
         assert_eq!(parse_credits(Some(&json!("x3.31 credits"))), Some(3.31));
         assert_eq!(parse_credits(Some(&json!("x0.34 credits"))), Some(0.34));
         assert_eq!(parse_credits(Some(&json!("x5.00"))), Some(5.0));
-        // 空 / 缺失 / 非数字 → None（无倍率）
         assert_eq!(parse_credits(Some(&json!(""))), None);
         assert_eq!(parse_credits(None), None);
         assert_eq!(parse_credits(Some(&json!("n/a"))), None);
@@ -448,13 +669,127 @@ mod tests {
             json!({"id": "a", "uid": "u-a", "variant": "cn"}),
             json!({"id": "b", "uid": "u-b", "variant": "ai"}),
         ];
-        // 无 state 文件时（测试环境）回落第一条
         let picked = active_account_from(&accounts).unwrap();
         assert_eq!(picked["id"], "a");
         assert!(active_account_from(&[]).is_none());
     }
 
-    /// 集成：用本地 mock 上游验证头注入与流式响应体原样透传。
+    #[test]
+    fn account_for_site_filters_by_variant_and_token() {
+        let accounts = vec![
+            json!({"id": "cn", "uid": "u-cn", "variant": "cn", "access_token": "t"}),
+            json!({"id": "ai", "uid": "u-ai", "variant": "ai", "access_token": "t"}),
+            json!({"id": "ai-no-token", "uid": "u-x", "variant": "ai"}),
+        ];
+        assert_eq!(account_for_site(&accounts, WbVariant::Ai).unwrap()["id"], "ai");
+        assert_eq!(account_for_site(&accounts, WbVariant::Cn).unwrap()["id"], "cn");
+    }
+
+    #[test]
+    fn select_account_filters_by_site() {
+        let _guard = reset_router_for_test();
+        let accounts = vec![
+            json!({"id": "cn", "variant": "cn", "access_token": "t"}),
+            json!({"id": "ai", "variant": "ai", "access_token": "t"}),
+        ];
+        let picked = select_account(&accounts, Some(WbVariant::Ai), None, 0).unwrap();
+        assert_eq!(picked["id"], "ai");
+        let picked = select_account(&accounts, Some(WbVariant::Cn), None, 0).unwrap();
+        assert_eq!(picked["id"], "cn");
+    }
+
+    #[test]
+    fn select_account_round_robins_within_site() {
+        let _guard = reset_router_for_test();
+        let accounts = vec![
+            json!({"id": "cn-1", "variant": "cn", "access_token": "t"}),
+            json!({"id": "cn-2", "variant": "cn", "access_token": "t"}),
+        ];
+        let a = select_account(&accounts, Some(WbVariant::Cn), None, 1).unwrap();
+        let b = select_account(&accounts, Some(WbVariant::Cn), None, 2).unwrap();
+        let c = select_account(&accounts, Some(WbVariant::Cn), None, 3).unwrap();
+        assert_eq!(a["id"], "cn-1");
+        assert_eq!(b["id"], "cn-2");
+        assert_eq!(c["id"], "cn-1");
+    }
+
+    #[test]
+    fn select_account_honors_session_stickiness() {
+        let _guard = reset_router_for_test();
+        let accounts = vec![
+            json!({"id": "cn-1", "variant": "cn", "access_token": "t"}),
+            json!({"id": "cn-2", "variant": "cn", "access_token": "t"}),
+        ];
+        // 首次选定后，同 session_key 必须固定返回同一账号。
+        let first = select_account(&accounts, Some(WbVariant::Cn), Some("s-1"), 1).unwrap();
+        let second = select_account(&accounts, Some(WbVariant::Cn), Some("s-1"), 2).unwrap();
+        assert_eq!(first["id"], second["id"]);
+
+        // 不同会话不受影响（可拿到另一个账号）。
+        let other = select_account(&accounts, Some(WbVariant::Cn), Some("s-2"), 3).unwrap();
+        assert_ne!(other["id"], first["id"]);
+    }
+
+    #[test]
+    fn select_account_skips_tripped_breaker_then_recovers() {
+        let _guard = reset_router_for_test();
+        let accounts = vec![
+            json!({"id": "cn-1", "variant": "cn", "access_token": "t"}),
+            json!({"id": "cn-2", "variant": "cn", "access_token": "t"}),
+        ];
+        // 触发 cn-1 熔断。
+        for _ in 0..BREAKER_FAILURE_THRESHOLD {
+            record_result(&accounts[0], true, 0);
+        }
+        // 冷却期内所有请求都只能选 cn-2（cn-1 被跳过）。
+        for _ in 0..4 {
+            let picked = select_account(&accounts, Some(WbVariant::Cn), None, 0).unwrap();
+            assert_eq!(picked["id"], "cn-2");
+        }
+
+        // 冷却结束后 cn-1 恢复可选：多次选择中必然出现 cn-1。
+        let mut seen_cn1 = false;
+        for tick in 0..4 {
+            let picked = select_account(
+                &accounts,
+                Some(WbVariant::Cn),
+                None,
+                BREAKER_COOLDOWN_MS + 1 + tick,
+            )
+            .unwrap();
+            seen_cn1 |= picked["id"] == "cn-1";
+        }
+        assert!(seen_cn1, "冷却结束后 cn-1 应重新参与轮询");
+    }
+
+    #[test]
+    fn select_account_prefers_lower_credit() {
+        let _guard = reset_router_for_test();
+        let accounts = vec![
+            json!({"id": "cn-1", "variant": "cn", "access_token": "t"}),
+            json!({"id": "cn-2", "variant": "cn", "access_token": "t"}),
+        ];
+        update_account_credits(&accounts[0], &[json!({"credits": "x0.79"})]);
+        update_account_credits(&accounts[1], &[json!({"credits": "x0.05"})]);
+        // cn-2 倍率更低，应被优先选中（即使轮询起点是 cn-1）。
+        let picked = select_account(&accounts, Some(WbVariant::Cn), None, 0).unwrap();
+        assert_eq!(picked["id"], "cn-2");
+    }
+
+    #[test]
+    fn record_result_success_clears_breaker() {
+        let _guard = reset_router_for_test();
+        let account = json!({"id": "cn-1", "variant": "cn", "access_token": "t"});
+        record_result(&account, true, 0);
+        record_result(&account, true, 0);
+        // 一次成功清零，不至于累计到阈值。
+        record_result(&account, false, 0);
+        record_result(&account, true, 0);
+        let accounts = vec![account];
+        // 未熔断，仍可选。
+        assert!(select_account(&accounts, Some(WbVariant::Cn), None, 0).is_some());
+    }
+
     #[tokio::test]
     async fn send_chat_to_injects_headers_and_streams_body() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -469,12 +804,10 @@ mod tests {
             let request = String::from_utf8_lossy(&buf[..n]).to_string();
             let headers_lower = request.to_ascii_lowercase();
 
-            // 断言注入了鉴权与身份头。
             assert!(headers_lower.contains("authorization: bearer smoke-token"));
             assert!(headers_lower.contains("x-domain: www.workbuddy.ai"));
             assert!(headers_lower.contains("x-user-id: u-1"));
             assert!(headers_lower.contains("x-product: saas"));
-            // 且请求体里模型为裸名（已去前缀）。
             assert!(request.contains("\"model\":\"glm-5.3\""));
 
             let body = "data: {\"object\":\"chat.completion.chunk\"}\n\n";
@@ -494,27 +827,12 @@ mod tests {
             "domain": "www.workbuddy.ai",
         });
         let url = format!("http://{addr}/v2/chat/completions");
-        let resp = send_chat_to(&url, &account, &json!({"model": "glm-5.3"})).await.unwrap();
+        let resp = send_chat_to(&url, &account, &json!({"model": "glm-5.3"}))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), 200);
         let text = resp.text().await.unwrap();
         assert!(text.contains("chat.completion.chunk"));
         server.await.unwrap();
-    }
-
-    #[test]
-    fn account_for_site_filters_by_variant_and_token() {
-        let accounts = vec![
-            json!({"id": "cn", "uid": "u-cn", "variant": "cn", "access_token": "t"}),
-            json!({"id": "ai", "uid": "u-ai", "variant": "ai", "access_token": "t"}),
-            json!({"id": "ai-no-token", "uid": "u-x", "variant": "ai"}),
-        ];
-        assert_eq!(
-            account_for_site(&accounts, WbVariant::Ai).unwrap()["id"],
-            "ai"
-        );
-        assert_eq!(
-            account_for_site(&accounts, WbVariant::Cn).unwrap()["id"],
-            "cn"
-        );
     }
 }

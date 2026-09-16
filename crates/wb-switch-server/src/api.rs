@@ -715,7 +715,10 @@ async fn api_save_update_config(Json(body): Json<Value>) -> Response {
 ///
 /// 上游本身是标准 OpenAI 协议，不做格式转换；`stream` 语义由请求体决定，
 /// 这里一律用流式 body 透传（非流式响应是单块 JSON，也能正常返回）。
-async fn proxy_chat_completions(Json(body): Json<Value>) -> Response {
+async fn proxy_chat_completions(
+    headers: axum::http::HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
     if !openai_proxy::proxy_enabled() {
         return openai_error("2API 代理未开启", StatusCode::NOT_FOUND, "proxy_disabled");
     }
@@ -725,12 +728,20 @@ async fn proxy_chat_completions(Json(body): Json<Value>) -> Response {
         Err(error) => return openai_error(&error, StatusCode::BAD_REQUEST, "invalid_request_error"),
     };
 
-    // P1：固定当前激活账号；该账号档位与请求前缀不符时按前缀选该站账号。
+    // 会话粘性键：官方客户端发 `X-Conversation-ID`；命中即固定同号以命中上游 cache。
+    let session_key = headers
+        .get("X-Conversation-ID")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+
+    // 路由选号：前缀锁站、默认池跨站；倍率最少优先 + 轮询 + 熔断 + 会话粘性。
     let accounts = account::load_accounts();
-    let account = match request.site {
-        Some(site) => openai_proxy::account_for_site(&accounts, site),
-        None => openai_proxy::active_account(),
-    };
+    let account = openai_proxy::select_account(
+        &accounts,
+        request.site,
+        session_key.as_deref(),
+        config::now_ms(),
+    );
     let Some(account) = account else {
         return openai_error(
             "没有可用账号：请先在账号页添加账号",
@@ -738,19 +749,6 @@ async fn proxy_chat_completions(Json(body): Json<Value>) -> Response {
             "no_account",
         );
     };
-    if account
-        .get("access_token")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("")
-        .is_empty()
-    {
-        return openai_error(
-            "当前账号缺少 access token，请重新登录",
-            StatusCode::BAD_GATEWAY,
-            "no_token",
-        );
-    }
 
     // 用裸模型名（去掉前缀）替换请求体里的 model 再转发。
     let mut upstream_body = body;
@@ -759,13 +757,22 @@ async fn proxy_chat_completions(Json(body): Json<Value>) -> Response {
     let resp = match openai_proxy::send_chat(&account, &upstream_body).await {
         Ok(resp) => resp,
         Err(error) => {
+            // 网络/传输错误不计入熔断（可能只是本地网络问题）。
             return openai_error(
                 &format!("上游请求失败: {error}"),
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
-            )
+            );
         }
     };
+
+    // 账号级失败（401/403）计入熔断；成功清零。5xx 与其它不计。
+    let status = resp.status();
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        openai_proxy::record_result(&account, true, config::now_ms());
+    } else if status.is_success() {
+        openai_proxy::record_result(&account, false, config::now_ms());
+    }
 
     forward_response(resp).await
 }
