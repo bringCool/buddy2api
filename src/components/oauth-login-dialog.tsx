@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Check, CircleAlert, Copy, ExternalLink } from "lucide-react";
+import { Check, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -107,10 +107,8 @@ export function OAuthLoginDialog({ open, onOpenChange, variant = DEFAULT_VARIANT
       const res = await api.oauthStart(variant);
       setLoginId(res.loginId);
       setUri(res.verificationUri);
-      // 国内版沿用自动打开；国际版不自动跳浏览器，让用户自己复制链接到无痕窗口
-      if (variant !== "ai") {
-        await openInBrowser(res.verificationUri);
-      }
+      // 两档位一致：发起后自动打开系统浏览器，弹窗内链接与复制按钮作为兜底。
+      await openInBrowser(res.verificationUri);
     } catch (e) {
       setError(api.asError(e));
     } finally {
@@ -118,7 +116,7 @@ export function OAuthLoginDialog({ open, onOpenChange, variant = DEFAULT_VARIANT
     }
   }
 
-  /** 复制验证链接：无痕窗口需要这条链接；失败必须如实提示，不能静默当成成功。 */
+  /** 复制验证链接（自动弹窗被拦截时的手动兜底）；失败必须如实提示。 */
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(uri);
@@ -149,16 +147,6 @@ export function OAuthLoginDialog({ open, onOpenChange, variant = DEFAULT_VARIANT
 
         {loginId && !result && (
           <div className="space-y-3">
-            {variant === "ai" && (
-              <Alert variant="warning">
-                <CircleAlert className="size-4" />
-                <AlertTitle>请把链接复制到无痕窗口打开</AlertTitle>
-                <AlertDescription>
-                  若浏览器已登录 workbuddy.ai，授权页会直接跳到「登录成功」而不会绑定账号。
-                  请用下方按钮复制链接，粘贴到浏览器的无痕（隐私）窗口中打开并完成登录。
-                </AlertDescription>
-              </Alert>
-            )}
             <Alert>
               <ExternalLink className="size-4" />
               <AlertDescription className="break-all">
@@ -179,12 +167,10 @@ export function OAuthLoginDialog({ open, onOpenChange, variant = DEFAULT_VARIANT
                 </a>
               </AlertDescription>
             </Alert>
-            {variant === "ai" && (
-              <Button variant="outline" size="sm" onClick={copyLink} className="w-full">
-                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                {copied ? "已复制" : "复制链接"}
-              </Button>
-            )}
+            <Button variant="outline" size="sm" onClick={copyLink} className="w-full">
+              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {copied ? "已复制" : "复制链接"}
+            </Button>
             <p className="text-sm text-muted-foreground">
               {copy.waiting}
             </p>
