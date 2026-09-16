@@ -18,8 +18,8 @@ use serde_json::{json, Value};
 
 use wb_switch_core::modules::{
     account, auth_file, checkin, codebuddy_cli, codebuddy_cn_ide, codebuddy_ide, config,
-    credit_usage, credits, export_import, oauth, process, refresh, rotate, session, switch,
-    token_stats, travel, update, variant::WbVariant,
+    credit_usage, credits, export_import, oauth, openai_proxy, process, refresh, rotate, session,
+    switch, token_stats, travel, update, variant::WbVariant,
 };
 
 /// WorkBuddy 运行状态缓存：Windows 上检测要跑 tasklist（慢），缓存几秒避免
@@ -122,6 +122,13 @@ pub fn router() -> Router {
         .route(
             "/api/update/config",
             get(api_update_config).post(api_save_update_config),
+        )
+        // 2API：本地 OpenAI 兼容代理（仅本机、免鉴权）。
+        .route("/v1/chat/completions", post(proxy_chat_completions))
+        .route("/v1/models", get(proxy_models))
+        .route(
+            "/api/proxy/config",
+            get(api_proxy_config).post(api_save_proxy_config),
         )
         .fallback(static_handler)
 }
@@ -697,6 +704,156 @@ async fn api_save_update_config(Json(body): Json<Value>) -> Response {
     match update::save_github_config(&body) {
         Ok(()) => json_ok(json!({ "ok": true, "config": update::load_github_config() })),
         Err(e) => json_err(e.to_string(), StatusCode::BAD_REQUEST),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2API：本地 OpenAI 兼容代理（仅本机、免鉴权）
+// ---------------------------------------------------------------------------
+
+/// POST /v1/chat/completions —— 注入当前激活账号凭据后透传到官方 OpenAI 兼容接口。
+///
+/// 上游本身是标准 OpenAI 协议，不做格式转换；`stream` 语义由请求体决定，
+/// 这里一律用流式 body 透传（非流式响应是单块 JSON，也能正常返回）。
+async fn proxy_chat_completions(Json(body): Json<Value>) -> Response {
+    if !openai_proxy::proxy_enabled() {
+        return openai_error("2API 代理未开启", StatusCode::NOT_FOUND, "proxy_disabled");
+    }
+    let model = body.get("model").and_then(Value::as_str).unwrap_or("");
+    let request = match openai_proxy::parse_model(model) {
+        Ok(request) => request,
+        Err(error) => return openai_error(&error, StatusCode::BAD_REQUEST, "invalid_request_error"),
+    };
+
+    // P1：固定当前激活账号；该账号档位与请求前缀不符时按前缀选该站账号。
+    let accounts = account::load_accounts();
+    let account = match request.site {
+        Some(site) => openai_proxy::account_for_site(&accounts, site),
+        None => openai_proxy::active_account(),
+    };
+    let Some(account) = account else {
+        return openai_error(
+            "没有可用账号：请先在账号页添加账号",
+            StatusCode::BAD_GATEWAY,
+            "no_account",
+        );
+    };
+    if account
+        .get("access_token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
+        return openai_error(
+            "当前账号缺少 access token，请重新登录",
+            StatusCode::BAD_GATEWAY,
+            "no_token",
+        );
+    }
+
+    // 用裸模型名（去掉前缀）替换请求体里的 model 再转发。
+    let mut upstream_body = body;
+    upstream_body["model"] = json!(request.upstream_model());
+
+    let resp = match openai_proxy::send_chat(&account, &upstream_body).await {
+        Ok(resp) => resp,
+        Err(error) => {
+            return openai_error(
+                &format!("上游请求失败: {error}"),
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+            )
+        }
+    };
+
+    forward_response(resp).await
+}
+
+/// GET /v1/models —— 聚合国内站 + 国际站的官方模型列表，带 `cn/`、`intl/` 前缀。
+async fn proxy_models() -> Response {
+    if !openai_proxy::proxy_enabled() {
+        return openai_error("2API 代理未开启", StatusCode::NOT_FOUND, "proxy_disabled");
+    }
+    let accounts = account::load_accounts();
+    let mut entries: Vec<Value> = Vec::new();
+    let mut plain_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for site in [WbVariant::Cn, WbVariant::Ai] {
+        let Some(account) = openai_proxy::account_for_site(&accounts, site) else {
+            continue;
+        };
+        let Ok(models) = openai_proxy::fetch_site_models(&account).await else {
+            // 单站失败只丢弃该站结果，不整体失败。
+            continue;
+        };
+        for entry in openai_proxy::site_model_entries(site, &models) {
+            if let Some(id) = entry.get("workbuddy_id").and_then(Value::as_str) {
+                // 同时导出无前缀官方 id（指向默认池），两站去重。
+                if plain_ids.insert(id.to_string()) {
+                    let mut plain = entry.clone();
+                    plain["id"] = json!(id);
+                    entries.push(plain);
+                }
+            }
+            entries.push(entry);
+        }
+    }
+
+    json_ok(json!({ "object": "list", "data": entries }))
+}
+
+/// 把上游响应（流式或非流式）透传给客户端。
+async fn forward_response(resp: reqwest::Response) -> Response {
+    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+
+    let stream = resp.bytes_stream();
+    let body = Body::from_stream(stream);
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, content_type)
+        .body(body)
+        .unwrap_or_else(|_| {
+            openai_error("响应构造失败", StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
+        })
+}
+
+/// 标准 OpenAI 错误体。
+fn openai_error(message: &str, status: StatusCode, kind: &str) -> Response {
+    (
+        status,
+        Json(json!({
+            "error": {
+                "message": message,
+                "type": kind,
+            }
+        })),
+    )
+        .into_response()
+}
+
+/// GET /api/proxy/config —— 2API 状态与配置。
+async fn api_proxy_config() -> Response {
+    let config = openai_proxy::load_proxy_config();
+    let account = openai_proxy::active_account();
+    json_ok(json!({
+        "enabled": openai_proxy::proxy_enabled(),
+        "baseUrl": "/v1",
+        "config": config,
+        "activeAccount": account.as_ref().map(account::account_meta),
+    }))
+}
+
+async fn api_save_proxy_config(Json(body): Json<Value>) -> Response {
+    match openai_proxy::save_proxy_config(&body) {
+        Ok(()) => json_ok(json!({ "ok": true, "config": openai_proxy::load_proxy_config() })),
+        Err(e) => json_err(e, StatusCode::BAD_REQUEST),
     }
 }
 

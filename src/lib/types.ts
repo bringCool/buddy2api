@@ -425,6 +425,22 @@ export interface GithubConfig {
   proxy?: string;
 }
 
+/** 2API 本地 OpenAI 兼容代理配置。 */
+export interface ProxyConfig {
+  /** 是否开启；关闭时 `/v1/*` 返回 404。 */
+  enabled: boolean;
+}
+
+/** 2API 状态与配置（设置页展示用）。 */
+export interface ProxyStatus {
+  enabled: boolean;
+  /** 对外 base URL 路径，如 `/v1`。 */
+  baseUrl: string;
+  config: ProxyConfig;
+  /** 当前激活账号（作为代理使用的账号）。 */
+  activeAccount?: AccountMeta | null;
+}
+
 export interface UpdateInfo {
   ok: boolean;
   current?: string;

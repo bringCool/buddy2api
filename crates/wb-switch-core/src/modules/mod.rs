@@ -10,6 +10,7 @@ pub mod credits;
 pub mod export_import;
 pub mod oauth;
 pub mod official_usage;
+pub mod openai_proxy;
 pub mod process;
 pub mod refresh;
 pub mod rotate;

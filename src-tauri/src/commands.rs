@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 use tauri::Emitter;
 use wb_switch_core::modules::{
     account, auth_file, checkin, codebuddy_cli, codebuddy_cn_ide, codebuddy_ide, credit_usage,
-    credits, export_import, oauth, process, refresh, rotate, session, switch, token_stats, travel,
+    credits, export_import, oauth, openai_proxy, process, refresh, rotate, session, switch,
+    token_stats, travel,
     update, variant::WbVariant,
 };
 
@@ -546,6 +547,35 @@ pub fn save_github_config(config: Value) -> Result<Value, String> {
 #[tauri::command]
 pub async fn check_update(proxy: Option<String>, force: Option<bool>) -> Value {
     update::update_check(proxy.as_deref(), force.unwrap_or(false)).await
+}
+
+// ---------------------------------------------------------------------------
+// 2API：本地 OpenAI 兼容代理
+// ---------------------------------------------------------------------------
+
+/// GET /api/proxy/config —— 2API 代理配置与当前激活账号。
+#[tauri::command]
+pub fn get_proxy_config() -> Value {
+    let account = openai_proxy::active_account();
+    json!({
+        "enabled": openai_proxy::proxy_enabled(),
+        "baseUrl": "/v1",
+        "config": openai_proxy::load_proxy_config(),
+        "activeAccount": account.as_ref().map(account::account_meta),
+    })
+}
+
+/// POST /api/proxy/config —— 保存 2API 代理配置。
+#[tauri::command]
+pub fn save_proxy_config(config: Value) -> Result<Value, String> {
+    openai_proxy::save_proxy_config(&config)?;
+    let account = openai_proxy::active_account();
+    Ok(json!({
+        "enabled": openai_proxy::proxy_enabled(),
+        "baseUrl": "/v1",
+        "config": openai_proxy::load_proxy_config(),
+        "activeAccount": account.as_ref().map(account::account_meta),
+    }))
 }
 
 /// 启动当前应用的新进程并退出旧进程，用于更新安装完成后的立即重启。

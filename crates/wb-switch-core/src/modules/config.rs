@@ -727,6 +727,19 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
+static STREAM_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// 流式代理专用客户端：不设整体超时（LLM 长连接），只设连接超时。
+pub fn http_client_streaming() -> &'static reqwest::Client {
+    STREAM_HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .user_agent(DEFAULT_HTTP_USER_AGENT)
+            .build()
+            .expect("failed to build streaming reqwest client")
+    })
+}
+
 /// 通用 HTTP 请求，返回解析后的 JSON。
 ///
 /// 行为对齐 Python 版：

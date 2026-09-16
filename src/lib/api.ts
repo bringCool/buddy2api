@@ -21,6 +21,8 @@ import type {
   ImportResult,
   OAuthPollResult,
   OAuthStartResult,
+  ProxyConfig,
+  ProxyStatus,
   RotateLog,
   RotateStatus,
   Session,
@@ -120,6 +122,8 @@ const ROUTES: Record<string, Route> = {
   save_github_config: { method: "POST", path: "/api/update/config" },
   check_update: { method: "GET", path: "/api/update/check" },
   switch_progress: { method: "GET", path: "/api/switch/progress" },
+  get_proxy_config: { method: "GET", path: "/api/proxy/config" },
+  save_proxy_config: { method: "POST", path: "/api/proxy/config" },
 };
 
 /**
@@ -532,6 +536,22 @@ export function checkUpdate(proxy?: string, force?: boolean): Promise<UpdateInfo
 
 export function relaunchApp(): Promise<void> {
   return call("relaunch_app");
+}
+
+// ---------------------------------------------------------------------------
+// 2API：本地 OpenAI 兼容代理
+// ---------------------------------------------------------------------------
+
+/** 读取 2API 代理配置与当前激活账号。 */
+export function getProxyConfig(): Promise<ProxyStatus> {
+  return call("get_proxy_config");
+}
+
+/** 保存 2API 代理配置（enabled）。 */
+export function saveProxyConfig(config: ProxyConfig): Promise<ProxyStatus> {
+  return call("save_proxy_config", {
+    config: config as unknown as Record<string, unknown>,
+  });
 }
 
 // ---------------------------------------------------------------------------

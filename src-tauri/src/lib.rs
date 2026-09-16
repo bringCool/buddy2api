@@ -179,6 +179,8 @@ pub fn run() {
             commands::get_github_config,
             commands::save_github_config,
             commands::check_update,
+            commands::get_proxy_config,
+            commands::save_proxy_config,
             commands::relaunch_app,
             commands::get_launch_at_login_enabled,
             commands::set_launch_at_login_enabled,
