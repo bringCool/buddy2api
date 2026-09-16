@@ -445,6 +445,75 @@ pub fn account_for_site(accounts: &[Value], site: WbVariant) -> Option<Value> {
 // 上游请求
 // ---------------------------------------------------------------------------
 
+/// access token 剩余不足该时长即视为「快过期」，代理发请求前主动刷新。
+const PRE_REFRESH_MARGIN_MS: i64 = 5 * 60 * 1000;
+
+/// 账号 token 是否已过期或临近过期（缺 `expiresAt` 视为需要刷新）。
+fn token_stale(account: &Value, now: i64) -> bool {
+    account
+        .get("expiresAt")
+        .and_then(Value::as_i64)
+        .map(|exp| exp - now < PRE_REFRESH_MARGIN_MS)
+        .unwrap_or(true)
+}
+
+/// 按账号串行化刷新：刷新会轮换 refresh token，并发刷新会让其中一次失效。
+static REFRESH_LOCKS: OnceLock<Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>> =
+    OnceLock::new();
+
+fn refresh_locks() -> &'static Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>> {
+    REFRESH_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn refresh_lock_for(account: &Value) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    let key = account_key(account);
+    let mut locks = refresh_locks().lock().unwrap();
+    locks
+        .entry(key)
+        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+/// 代理发请求前保证账号 token 新鲜：`expiresAt` 缺失/已过期/临近过期时刷新一次。
+///
+/// 刷新失败（refresh token 失效等）时原样返回旧账号，由后续上游 401 触发重试或
+/// 最终报错，不在这里中断；刷新结果会落盘并返回新账号。
+pub async fn ensure_account_fresh(account: &Value) -> Value {
+    let expired_or_near = token_stale(account, now_ms());
+    let has_rt = get_str(account, "refresh_token").is_some();
+    if expired_or_near && has_rt {
+        let _guard = refresh_lock_for(account).lock_owned().await;
+        // 拿到锁后复核：可能已被并发请求刷新过，账号库里的 token 已是新的。
+        if let Some(latest) = account::find_account(&account_key(account)) {
+            let still_stale = latest
+                .get("expiresAt")
+                .and_then(Value::as_i64)
+                .map(|exp| exp - now_ms() < PRE_REFRESH_MARGIN_MS)
+                .unwrap_or(true);
+            if !still_stale {
+                return latest;
+            }
+            return crate::modules::refresh::refresh_account_token(latest).await;
+        }
+        return crate::modules::refresh::refresh_account_token(account.clone()).await;
+    }
+    account.clone()
+}
+
+/// 无条件刷新账号 token（上游返回 401/403 后重试前调用）。
+///
+/// 无 refresh token 时原样返回（会带 `needs_relogin`），调用方据此放弃重试。
+pub async fn force_refresh(account: &Value) -> Value {
+    if get_str(account, "refresh_token").is_none() {
+        let mut unchanged = account.clone();
+        unchanged["needs_relogin"] = json!(true);
+        unchanged["needs_relogin_reason"] = json!("缺少 refresh token，无法刷新，需重新登录");
+        return unchanged;
+    }
+    let _guard = refresh_lock_for(account).lock_owned().await;
+    crate::modules::refresh::refresh_account_token(account.clone()).await
+}
+
 /// 发送聊天请求，返回上游原始响应（供上层流式/非流式透传）。
 pub async fn send_chat(account: &Value, body: &Value) -> Result<reqwest::Response, String> {
     let url = chat_url(WbVariant::from_account(account));
@@ -788,6 +857,25 @@ mod tests {
         let accounts = vec![account];
         // 未熔断，仍可选。
         assert!(select_account(&accounts, Some(WbVariant::Cn), None, 0).is_some());
+    }
+
+    #[test]
+    fn token_stale_covers_expired_near_and_missing() {
+        let now = 1_000_000;
+        // 已过期
+        assert!(token_stale(&json!({"expiresAt": now - 1}), now));
+        // 临近过期（余量内）
+        assert!(token_stale(
+            &json!({"expiresAt": now + PRE_REFRESH_MARGIN_MS - 1}),
+            now
+        ));
+        // 仍新鲜
+        assert!(!token_stale(
+            &json!({"expiresAt": now + PRE_REFRESH_MARGIN_MS + 1}),
+            now
+        ));
+        // 缺失 expiresAt：无法判断，按需刷新
+        assert!(token_stale(&json!({}), now));
     }
 
     #[tokio::test]

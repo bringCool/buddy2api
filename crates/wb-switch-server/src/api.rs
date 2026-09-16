@@ -742,7 +742,7 @@ async fn proxy_chat_completions(
         session_key.as_deref(),
         config::now_ms(),
     );
-    let Some(account) = account else {
+    let Some(mut account) = account else {
         return openai_error(
             "没有可用账号：请先在账号页添加账号",
             StatusCode::BAD_GATEWAY,
@@ -750,11 +750,14 @@ async fn proxy_chat_completions(
         );
     };
 
+    // 发请求前惰性刷新：expiresAt 缺失/已过期/临近过期时先刷新，避免首个请求 401。
+    account = openai_proxy::ensure_account_fresh(&account).await;
+
     // 用裸模型名（去掉前缀）替换请求体里的 model 再转发。
     let mut upstream_body = body;
     upstream_body["model"] = json!(request.upstream_model());
 
-    let resp = match openai_proxy::send_chat(&account, &upstream_body).await {
+    let mut resp = match openai_proxy::send_chat(&account, &upstream_body).await {
         Ok(resp) => resp,
         Err(error) => {
             // 网络/传输错误不计入熔断（可能只是本地网络问题）。
@@ -766,11 +769,34 @@ async fn proxy_chat_completions(
         }
     };
 
-    // 账号级失败（401/403）计入熔断；成功清零。5xx 与其它不计。
+    // 上游仍返回鉴权失败：刷新一次并重试一次（应对服务端提前失效或并发刷新窗口）。
     let status = resp.status();
     if status.as_u16() == 401 || status.as_u16() == 403 {
+        let refreshed = openai_proxy::force_refresh(&account).await;
+        if refreshed
+            .get("needs_relogin")
+            .and_then(Value::as_bool)
+            != Some(true)
+        {
+            account = refreshed;
+            match openai_proxy::send_chat(&account, &upstream_body).await {
+                Ok(retry) => resp = retry,
+                Err(error) => {
+                    return openai_error(
+                        &format!("上游请求失败: {error}"),
+                        StatusCode::BAD_GATEWAY,
+                        "upstream_error",
+                    )
+                }
+            }
+        }
+    }
+
+    // 账号级失败（401/403）计入熔断；成功清零。5xx 与其它不计。
+    let final_status = resp.status();
+    if final_status.as_u16() == 401 || final_status.as_u16() == 403 {
         openai_proxy::record_result(&account, true, config::now_ms());
-    } else if status.is_success() {
+    } else if final_status.is_success() {
         openai_proxy::record_result(&account, false, config::now_ms());
     }
 
