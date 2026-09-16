@@ -36,13 +36,16 @@ const CN_INTERNET_ENVIRONMENT: &str = "internal";
 /// CLI 启动会把 local_storage 里的 Environment-Cache 写进 process.env，
 /// settings.json 缺省时就会继续走国内站。
 const AI_INTERNET_ENVIRONMENT: &str = "public";
-const CN_CLI_ENDPOINT: &str = "https://copilot.tencent.com";
-const AI_CLI_ENDPOINT: &str = "https://www.codebuddy.ai";
+/// 国内版 CLI 端点：与产品域统一为 `www.workbuddy.cn`（官方 CLI 自身
+/// `CN_SAAS_CORE_API_PRIMARY_ORIGIN` 亦为此值）。
+const CN_CLI_ENDPOINT: &str = "https://www.workbuddy.cn";
+/// 国际版 CLI 端点：与产品域统一为 `www.workbuddy.ai`。
+const AI_CLI_ENDPOINT: &str = "https://www.workbuddy.ai";
 /// CLI `resolveModelBaseURL`：若设置了 `CODEBUDDY_BASE_URL`，会原样当作 OpenAI
 /// client `baseURL`，**不会**再拼 `/v2`。写成门户根地址
-/// `https://www.codebuddy.ai` 会 POST `/chat/completions` 到官网 nginx，返回
-/// `405 Not Allowed`（nginx/1.27.3）。国际版 OpenAI 兼容接口是 `${endpoint}/v2`。
-const AI_CLI_OPENAI_BASE_URL: &str = "https://www.codebuddy.ai/v2";
+/// `https://www.workbuddy.ai` 会 POST `/chat/completions` 到官网 nginx，返回
+/// `405 Not Allowed`。国际版 OpenAI 兼容接口是 `${endpoint}/v2`。
+const AI_CLI_OPENAI_BASE_URL: &str = "https://www.workbuddy.ai/v2";
 /// CodeBuddy CLI ProductManager 写入 `~/.codebuddy/local_storage/entry_<md5(key)>.info`
 /// 的固定 key。切换档位时必须改这两份缓存，否则 settings.json 改了 CLI 仍打国内站。
 const CLI_ENV_CACHE_KEY: &str = "CodeBuddy-Environment-Cache";
@@ -1503,12 +1506,12 @@ mod tests {
     #[test]
     fn apply_cli_region_env_replaces_portal_root_base_url_with_openai_v2() {
         let mut settings = json!({
-            "env": { CODEBUDDY_BASE_URL: "https://www.codebuddy.ai" }
+            "env": { CODEBUDDY_BASE_URL: "https://www.workbuddy.ai" }
         });
         apply_cli_region_env(&mut settings, WbVariant::Ai).unwrap();
         assert_eq!(
             settings["env"][CODEBUDDY_BASE_URL],
-            "https://www.codebuddy.ai/v2"
+            "https://www.workbuddy.ai/v2"
         );
     }
 
@@ -1520,7 +1523,7 @@ mod tests {
         let endpoint_path = dir.join(cli_cache_filename(CLI_ENDPOINT_CACHE_KEY));
         let product_path = dir.join(cli_cache_filename(CLI_PRODUCT_CACHE_KEY));
         fs::write(&env_path, "\"internal\"").unwrap();
-        fs::write(&endpoint_path, "\"https://copilot.tencent.com\"").unwrap();
+        fs::write(&endpoint_path, "\"https://www.workbuddy.cn\"").unwrap();
         fs::write(&product_path, "gzip-placeholder").unwrap();
 
         sync_cli_runtime_cache_at(&dir, WbVariant::Ai).unwrap();

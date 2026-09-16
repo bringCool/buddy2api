@@ -241,7 +241,7 @@ mod tests {
         );
         assert_eq!(
             refresh_url(&json!({"uid": "u-1", "access_token": "t"})),
-            "https://www.codebuddy.cn/v2/plugin/auth/token/refresh"
+            "https://www.workbuddy.cn/v2/plugin/auth/token/refresh"
         );
         // 国际版账号 → 国际版域名。
         assert_eq!(

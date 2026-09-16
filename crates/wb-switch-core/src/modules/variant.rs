@@ -322,6 +322,11 @@ mod tests {
     fn from_account_prefers_explicit_field_then_domain() {
         assert_eq!(WbVariant::from_account(&json!({})), WbVariant::Cn);
         assert_eq!(
+            WbVariant::from_account(&json!({"domain": "www.workbuddy.cn"})),
+            WbVariant::Cn
+        );
+        // 旧版令牌可能仍带 codebuddy.cn 域：非 .workbuddy.ai 一律按国内版解释。
+        assert_eq!(
             WbVariant::from_account(&json!({"domain": "www.codebuddy.cn"})),
             WbVariant::Cn
         );
@@ -434,7 +439,7 @@ mod tests {
 
     #[test]
     fn network_and_identity_differ_by_variant() {
-        assert_eq!(WbVariant::Cn.api_endpoint(), "https://www.codebuddy.cn");
+        assert_eq!(WbVariant::Cn.api_endpoint(), "https://www.workbuddy.cn");
         assert_eq!(WbVariant::Ai.api_endpoint(), "https://www.workbuddy.ai");
         assert_eq!(WbVariant::Cn.api_prefix(), "/v2/plugin");
         assert_eq!(WbVariant::Ai.api_prefix(), "/v2/plugin");

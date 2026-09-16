@@ -78,12 +78,12 @@ xattr -rd com.apple.quarantine "/Applications/workbuddy-switch.app"
 
 - **登录态文件**：国际版为 `CodeBuddyExtension/Data/Public/auth/workbuddy-desktop-ai.info`（与国内版同目录、不同文件）。
 - **客户端**：macOS `WorkBuddy AI.app`、Windows `%LOCALAPPDATA%\Programs\WorkBuddyAI\WorkBuddyAI.exe`；切换只关闭/启动对应档位的客户端。
-- **接口**：国际版走 `www.workbuddy.ai`（国内版为 `www.codebuddy.cn` / `copilot.tencent.com`），请求头 Origin / X-Domain 跟随账号所属域。
+- **接口**：国内版统一 `www.workbuddy.cn`，国际版统一 `www.workbuddy.ai`（登录、插件、刷新、CLI、积分、聊天一致），请求头 Origin / X-Domain 跟随账号所属域。
 - **签到 / 成长中心**：两档位默认开放，入口与待签到判定一致。官方是否真正开放由接口返回决定；国际版未开放时按「未开放签到」（inactive）归类，不计为失败、不重试，也不让托盘停在「可签到」。
 - **OAuth 登录**：两档位一致，发起后自动打开系统浏览器；弹窗内保留链接与复制按钮作为兜底。
 - **当前限制**：国际版暂不支持会话复制；Token 统计在国际版数据目录缺失 `projects/` 时显示为空。
-- **CodeBuddy 国际版 IDE**：国际 Tab 把 WorkBuddy AI 账号注入 `CodeBuddy.app`（`planning-genie.new.accessToken`）。token 域是 `workbuddy.ai`，与官方 `codebuddy.ai` 可能不一致；失败会报错。
-- **CodeBuddy CLI**：国内/国际是同一套 CLI。切国际账号时写入 `CODEBUDDY_INTERNET_ENVIRONMENT=public`（官网 IAM 国际版取值），`CODEBUDDY_BASE_URL=https://www.codebuddy.ai/v2`（OpenAI 兼容接口；写成门户根地址 `https://www.codebuddy.ai` 会 POST `/chat/completions` 到官网 nginx，返回 405），并覆盖 `~/.codebuddy/local_storage` 里 CLI 自己缓存的 `internal` / `copilot.tencent.com`（只改 settings 不够，CLI 启动会把这份缓存灌进进程环境）。切国内则写回 `internal` 并删除 `CODEBUDDY_BASE_URL`。账号页切 CLI 会二次确认；跨国内/国际时确认后自动关闭正在运行的 CLI（不含 IDE），请随后重新打开。自动轮换不关进程。
+- **CodeBuddy 国际版 IDE**：国际 Tab 把 WorkBuddy AI 账号注入 `CodeBuddy.app`（`planning-genie.new.accessToken`）。token 域是 `workbuddy.ai`，与官方 CodeBuddy IDE 可能不一致；失败会报错。
+- **CodeBuddy CLI**：国内/国际是同一套 CLI。切国际账号时写入 `CODEBUDDY_INTERNET_ENVIRONMENT=public`（官网 IAM 国际版取值），`CODEBUDDY_BASE_URL=https://www.workbuddy.ai/v2`（OpenAI 兼容接口；写成门户根地址 `https://www.workbuddy.ai` 会 POST `/chat/completions` 到官网 nginx，返回 405），并覆盖 `~/.codebuddy/local_storage` 里 CLI 自己缓存的 `internal` / 端点缓存（只改 settings 不够，CLI 启动会把这份缓存灌进进程环境）。切国内则写回 `internal`、端点缓存写 `https://www.workbuddy.cn`，并删除 `CODEBUDDY_BASE_URL`。账号页切 CLI 会二次确认；跨国内/国际时确认后自动关闭正在运行的 CLI（不含 IDE），请随后重新打开。自动轮换不关进程。
 
 > 说明：国际版链路基于接口与客户端布局实现，尚未在真实国际版客户端上做端到端切换验证；遇到问题请附上版本与日志反馈。
 
