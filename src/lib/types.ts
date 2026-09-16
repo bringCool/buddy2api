@@ -11,7 +11,11 @@ export interface AccountMeta {
   uid: string | null;
   email: string | null;
   nickname: string | null;
+  /** 组织（企业）ID；官方未返回时为空。 */
+  enterpriseId: string | null;
   enterpriseName: string | null;
+  /** 组织标识（后端归一化）。同一手机号在不同组织下 uid 相同，靠它区分账号。 */
+  orgKey: string;
   expiresAt: number | null;
   refreshExpiresAt: number | null;
   refreshedAt: number | null;
@@ -29,6 +33,9 @@ export interface AppStatus {
     uid: string | null;
     nickname: string | null;
     email: string | null;
+    enterpriseId: string | null;
+    enterpriseName: string | null;
+    orgKey: string;
   } | null;
   appPath: string;
   version: string;
@@ -72,6 +79,7 @@ export interface ImportPreviewAccount {
   uid: string | null;
   nickname: string | null;
   email: string | null;
+  enterpriseName: string | null;
   hasToken: boolean;
 }
 
@@ -109,6 +117,8 @@ export interface SessionCopyReport {
   copied?: CopyResult[];
   errors?: { id: string; error: string }[];
   error?: string;
+  /** 未执行复制的原因（如目标账号与当前账号同 uid，会话本就共享）。 */
+  skipped?: string;
 }
 
 export interface SwitchResult {

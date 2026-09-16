@@ -427,8 +427,15 @@ fn copy_sessions_for_switch_at(
     }
     let source_uid = current_user_uid(variant)
         .ok_or_else(|| "未读取到本机登录态，无法确定来源账号".to_string())?;
+    // 同一手机号在不同组织（个人版 / 企业版）下 uid 相同，会话在官方库里本就按 uid
+    // 归属、两个组织共享，复制没有意义。显式回报一次，避免用户勾了会话却毫无反馈。
     if source_uid == target_uid {
-        return Err("当前账号与目标账号相同，无需复制会话".to_string());
+        return Ok(json!({
+            "sourceUid": source_uid,
+            "targetUid": target_uid,
+            "copied": [],
+            "skipped": "目标账号与当前账号共用同一个 uid（同手机号的另一个组织），会话本就归属该 uid，无需复制",
+        }));
     }
 
     let mut report = json!({

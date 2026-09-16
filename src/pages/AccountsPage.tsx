@@ -84,12 +84,41 @@ function creditPriorityRank(credit?: CreditExpiry): number {
   return 2;
 }
 
-function isWorkbuddyCurrent(account: AccountMeta, current: AppStatus["current"] | undefined): boolean {
+/** 同一手机号在不同组织（个人版 / 企业版）下 uid 相同，需要按组织标识再区分一次。 */
+function sameOrganization(account: AccountMeta, current: NonNullable<AppStatus["current"]>): boolean {
+  return account.orgKey === current.orgKey;
+}
+
+/**
+ * 判断账号是否是 WorkBuddy 当前登录账号。
+ *
+ * `sharedUids` 是账号库里出现多次的 uid；只有这些 uid 才追加组织标识比对，
+ * 避免老认证文件缺组织字段时，单账号用户的「当前账号」标记丢失。
+ */
+function isWorkbuddyCurrent(
+  account: AccountMeta,
+  current: AppStatus["current"] | undefined,
+  sharedUids: Set<string>,
+): boolean {
   if (!current) return false;
-  return Boolean(
+  const matched = Boolean(
     (current.uid && (account.uid === current.uid || account.id === current.uid)) ||
       (current.email && account.email === current.email),
   );
+  if (!matched) return false;
+  return account.uid && sharedUids.has(account.uid) ? sameOrganization(account, current) : true;
+}
+
+/** 账号库中出现多次的 uid（同一手机号的多个组织）。 */
+function sharedUidSet(accounts: AccountMeta[]): Set<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const account of accounts) {
+    if (!account.uid) continue;
+    if (seen.has(account.uid)) shared.add(account.uid);
+    seen.add(account.uid);
+  }
+  return shared;
 }
 
 /** 并行查询今日签到；失败的账号不写入，由调用方保留原值。 */
@@ -648,8 +677,11 @@ export default function AccountsPage() {
     : "";
   const cliSwitchTargetRegion = cliSwitchTarget ? variantLabel(accountVariant(cliSwitchTarget)) : "";
   const cliSwitchCurrentRegion = variantLabel(normalizeVariant(codebuddyCli?.activeAccountVariant));
+  const sharedUids = sharedUidSet(accounts);
   const workbuddyCurrentName = current
-    ? current.nickname || current.email || current.uid || "未知账号"
+    ? [current.nickname || current.email || current.uid || "未知账号", current.enterpriseName]
+        .filter(Boolean)
+        .join(" · ")
     : "未登录";
   const codebuddyCurrentName = codebuddyCli?.configured
     ? codebuddyCli.activeAccountName || "未检测到"
@@ -975,7 +1007,7 @@ export default function AccountsPage() {
                 creditLoading={creditLoadingMap[a.id]}
                 creditUpdatedAt={creditUpdatedAtMap[a.id]}
                 creditPriority={a.id === priorityAccountId}
-                workbuddyActive={isWorkbuddyCurrent(a, current)}
+                workbuddyActive={isWorkbuddyCurrent(a, current, sharedUids)}
                 codebuddyCliConfigured={codebuddyCli?.configured && !codebuddyCli.migrationRequired && !codebuddyCli.syncPending}
                 codebuddyCliActive={a.id === cliCurrentAccountId}
                 codebuddyCliBusy={codebuddyCliSwitchingId !== null}

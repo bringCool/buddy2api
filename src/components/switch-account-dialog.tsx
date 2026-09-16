@@ -29,6 +29,12 @@ interface Props {
   onDone?: () => void;
 }
 
+/** 目标账号展示名（带组织归属，区分同一手机号的多个组织）。 */
+function accountLabel(account: AccountMeta | null): string {
+  const name = account?.nickname || account?.email || account?.uid || "该账号";
+  return account?.enterpriseName ? `${name} · ${account.enterpriseName}` : name;
+}
+
 /** 切换账号弹窗：可勾选当前账号的会话复制到目标账号（路径 B）。 */
 export function SwitchAccountDialog({ open, onOpenChange, account, onDone }: Props) {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -121,12 +127,14 @@ export function SwitchAccountDialog({ open, onOpenChange, account, onDone }: Pro
         accountId: account.id,
         copySessionIds: requestedCopy ? [...selected] : undefined,
       });
-      const nickname = account.nickname || account.email || account.uid || "该账号";
+      const nickname = accountLabel(account);
       const parts: string[] = [];
       const copyError = res.sessionCopy?.error;
       const copiedCount = res.sessionCopy?.copied?.length ?? 0;
       if (copiedCount > 0) {
         parts.push(`已复制 ${copiedCount} 个会话`);
+      } else if (res.sessionCopy?.skipped) {
+        parts.push(res.sessionCopy.skipped);
       }
       if (res.backup) parts.push(`备份: ${res.backup}`);
       toast.success(`已切换至「${nickname}」`, {
@@ -219,7 +227,7 @@ export function SwitchAccountDialog({ open, onOpenChange, account, onDone }: Pro
         className="flex max-h-[min(90vh,calc(100vh-2rem))] min-w-0 flex-col overflow-hidden"
       >
         <DialogHeader className="shrink-0">
-          <DialogTitle>切换到「{account?.nickname || account?.email || account?.uid || "该账号"}」</DialogTitle>
+          <DialogTitle>切换到「{accountLabel(account)}」</DialogTitle>
           <DialogDescription>
             切换会关闭并重启 {variantAppName(accountVariant(account))}，认证文件将写入目标账号。
           </DialogDescription>

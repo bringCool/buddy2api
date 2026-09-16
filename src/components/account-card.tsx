@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarCheck2, CalendarDays, Check, CircleCheck, Clock3, Coins, Ellipsis, Loader2, PackageOpen, PlaneTakeoff, RefreshCw, Sparkles, Star, Trash2 } from "lucide-react";
+import { ArrowRight, Building2, CalendarCheck2, CalendarDays, Check, CircleCheck, Clock3, Coins, Ellipsis, Loader2, PackageOpen, PlaneTakeoff, RefreshCw, Sparkles, Star, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +76,19 @@ function creditResources(credit?: CreditExpiry): CreditResource[] {
       return leftExpiry === rightExpiry ? left.index - right.index : leftExpiry - rightExpiry;
     })
     .map(({ resource }) => resource);
+}
+
+/**
+ * 组织归属展示名。
+ *
+ * 同一手机号在个人版与企业版下 uid、昵称、邮箱可能完全相同，卡片上必须标出归属
+ * 才能分辨。官方不一定返回企业名，此时退回后端归一化的组织标识。
+ */
+function organizationLabel(account: AccountMeta): string {
+  if (account.enterpriseName) return account.enterpriseName;
+  if (account.orgKey === "kind:personal") return "个人版";
+  if (account.orgKey.startsWith("sso:")) return account.orgKey.slice("sso:".length);
+  return "企业版";
 }
 
 function accountIdentity(account: AccountMeta): string {
@@ -306,6 +319,9 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
 
   const statusChips = (
     <>
+      <Badge variant="secondary" className={cn(chipClass, "text-muted-foreground")} title={`组织标识 · ${account.orgKey}`}>
+        <Building2 /> {organizationLabel(account)}
+      </Badge>
       {todayCheckedIn !== undefined &&
         statusIconChip({
           icon: todayCheckedIn ? (

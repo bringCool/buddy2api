@@ -887,20 +887,25 @@ fn load_state() -> Value {
         .unwrap_or_else(|| json!({}))
 }
 
+/// 按 id 或 uid 定位账号：先整表匹配 id，再整表回退匹配 uid。
+///
+/// 同一手机号在不同组织下 uid 相同，uid 已不唯一；逐条 `id || uid` 会让靠前记录的
+/// uid 抢在靠后记录的 id 之前命中，把 CLI 切到错误账号上。
 fn account_index(accounts: &[Value], account_id: &str) -> Option<(usize, String)> {
-    accounts.iter().enumerate().find_map(|(index, account)| {
-        let matches = account.get("id").and_then(Value::as_str) == Some(account_id)
-            || account.get("uid").and_then(Value::as_str) == Some(account_id);
-        if !matches {
-            return None;
-        }
-        let canonical_id = account
-            .get("id")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| account_id.to_string());
-        Some((index, canonical_id))
-    })
+    let locate = |key: &str| {
+        accounts.iter().enumerate().find_map(|(index, account)| {
+            if account.get(key).and_then(Value::as_str) != Some(account_id) {
+                return None;
+            }
+            let canonical_id = account
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| account_id.to_string());
+            Some((index, canonical_id))
+        })
+    };
+    locate("id").or_else(|| locate("uid"))
 }
 
 fn state_account_index(state: &Value, accounts: &[Value]) -> Option<(usize, String)> {

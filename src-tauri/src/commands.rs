@@ -45,6 +45,10 @@ fn build_app_status(variant: WbVariant) -> AppStatus {
             "uid": acct.get("uid"),
             "nickname": acct.get("nickname"),
             "email": acct.get("email"),
+            // 同一手机号在不同组织下 uid 相同，前端要靠组织标识才能认出是哪一条账号
+            "enterpriseId": account::identity_enterprise_id(&acct),
+            "enterpriseName": acct.get("enterpriseName"),
+            "orgKey": account::identity_org_key(&acct),
         }))
     });
     AppStatus {

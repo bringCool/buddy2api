@@ -1,4 +1,4 @@
-//! 账号导出/导入：解析导入文件、按 uid 去重合并、计数。
+//! 账号导出/导入：解析导入文件、按「uid + 组织」去重合并、计数。
 //!
 //! 纯逻辑（`parse_accounts_json` / `merge_import_records` / `select_export_records`）
 //! 不依赖文件系统，便于无 UI 环境单测；`export_accounts` / `import_accounts`
@@ -17,7 +17,7 @@ pub struct ImportResult {
     pub imported: usize,
     /// 未导入的数量（缺 access_token / 索引越界）。
     pub skipped: usize,
-    /// 其中覆盖了同 uid 本地账号的数量。
+    /// 其中覆盖了同一身份（uid + 组织）本地账号的数量。
     pub overwritten: usize,
 }
 
@@ -53,6 +53,7 @@ pub fn preview_accounts(text: &str) -> Result<Value, String> {
                 "uid": item.get("uid"),
                 "nickname": item.get("nickname"),
                 "email": item.get("email"),
+                "enterpriseName": item.get("enterpriseName"),
                 "hasToken": account::get_str(item, "access_token").is_some(),
             })
         })
@@ -65,7 +66,7 @@ pub fn preview_accounts(text: &str) -> Result<Value, String> {
 enum MergeOutcome {
     /// 追加为新账号。
     Appended,
-    /// 覆盖同 uid 的本地账号（保留导入记录原样）。
+    /// 覆盖同一身份的本地账号（保留导入记录原样）。
     Overwritten,
     /// 缺少 access_token，跳过。
     Skipped,
@@ -73,17 +74,19 @@ enum MergeOutcome {
 
 /// 纯函数：把一条导入记录合并进账号列表。
 ///
-/// 按 uid 去重：同 uid 覆盖（保留导入记录原样）；uid 缺失或无法匹配则追加。
+/// 按「uid + 组织」去重：同一身份覆盖（保留导入记录原样）；uid 缺失或无法匹配则追加。
+/// 同一手机号在不同组织（个人版 / 企业版）下 uid 相同，属于两个账号，不互相覆盖。
 /// 缺少 access_token 的记录跳过，不进入账号库。
 fn merge_import_record(accounts: &mut Vec<Value>, item: &Value) -> MergeOutcome {
     if account::get_str(item, "access_token").is_none() {
         return MergeOutcome::Skipped;
     }
     if let Some(uid) = account::get_str(item, "uid").as_deref() {
-        if let Some(existing) = accounts
-            .iter_mut()
-            .find(|a| account::get_str(a, "uid").as_deref() == Some(uid))
-        {
+        let org_key = account::identity_org_key(item);
+        if let Some(existing) = accounts.iter_mut().find(|a| {
+            account::get_str(a, "uid").as_deref() == Some(uid)
+                && account::identity_org_key(a) == org_key
+        }) {
             let mut replaced = item.clone();
             // 导入记录缺 id 时保留本地 id：账号库不允许出现无 id 记录
             //（删除按 id、列表 key、导出选择都依赖 id）。
@@ -285,6 +288,30 @@ mod tests {
         assert_eq!(accounts[0]["id"], "local-id", "导入记录缺 id 时保留本地 id");
         assert_eq!(accounts[0]["nickname"], "新名称");
         assert_eq!(accounts[0]["access_token"], "tok");
+    }
+
+    /// 同 uid 但分属不同组织（个人版 / 企业版）：导入应追加，不能覆盖另一个组织。
+    #[test]
+    fn merge_appends_same_uid_from_another_organization() {
+        let mut accounts = vec![record("local", Some("u1"), "个人版", None, true)];
+        let text = r#"[{ "id": "imported", "uid": "u1", "enterpriseId": "ent-1", "nickname": "企业版", "access_token": "tok-ent" }]"#;
+        let result = merge_import_records(&mut accounts, text, &[0]).unwrap();
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.overwritten, 0);
+        assert_eq!(accounts.len(), 2, "同 uid 不同组织应新增而不是覆盖");
+        assert_eq!(accounts[0]["id"], "local");
+    }
+
+    #[test]
+    fn merge_overwrites_same_uid_within_same_organization() {
+        let mut local = record("local", Some("u1"), "旧名称", None, true);
+        local["enterpriseId"] = json!("ent-1");
+        let mut accounts = vec![local];
+        let text = r#"[{ "id": "imported", "uid": "u1", "enterpriseId": "ent-1", "nickname": "新名称", "access_token": "tok-new" }]"#;
+        let result = merge_import_records(&mut accounts, text, &[0]).unwrap();
+        assert_eq!(result.overwritten, 1);
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0]["id"], "imported");
     }
 
     #[test]

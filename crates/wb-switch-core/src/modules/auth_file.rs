@@ -7,7 +7,7 @@
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
-use crate::modules::account::get_str;
+use crate::modules::account::{get_str, identity_enterprise_id, identity_org_key};
 use crate::modules::config::{atomic_write, backup_dir, now_ms, utc_iso};
 use crate::modules::variant::WbVariant;
 
@@ -73,6 +73,20 @@ pub fn build_account_obj(acc: &Value) -> Value {
         "nickname".to_string(),
         acc.get("nickname").cloned().unwrap_or_else(|| json!("")),
     );
+    // 组织归属：profile_raw 缺失时（如从本机导入、历史手动添加）用账号库字段补上，
+    // 否则切换写出的认证文件没有组织标识，再导入回来就分不清个人版与企业版。
+    if map_str(&obj, "enterpriseId").is_none() {
+        if let Some(enterprise_id) = identity_enterprise_id(acc) {
+            obj.insert("enterpriseId".to_string(), json!(enterprise_id));
+        }
+    }
+    if map_str(&obj, "enterpriseName").is_none() {
+        if let Some(enterprise_name) =
+            get_str(acc, "enterpriseName").or_else(|| get_str(acc, "enterprise_name"))
+        {
+            obj.insert("enterpriseName".to_string(), json!(enterprise_name));
+        }
+    }
     setdefault(&mut obj, "type", json!("personal"));
     setdefault(&mut obj, "accountType", json!(""));
     setdefault(&mut obj, "idp", json!(""));
@@ -165,6 +179,27 @@ pub fn build_auth_obj(acc: &Value) -> Value {
     Value::Object(obj)
 }
 
+/// 把目标账号并入官方 `allAccounts`（去重：uid（或 id）+ 组织）。
+///
+/// 同一手机号在个人版与企业版下 uid 相同，只剔除同组织的旧条目，否则切换后
+/// 官方客户端的账号列表里会少掉另一个组织。
+fn merge_into_all_accounts(existing: &[Value], acc: &Value, account_obj: &Value) -> Vec<Value> {
+    let target_uid = get_str(acc, "uid").unwrap_or_default();
+    let target_org = identity_org_key(acc);
+    let mut all: Vec<Value> = existing
+        .iter()
+        .filter(|a| {
+            let primary = get_str(a, "uid")
+                .or_else(|| get_str(a, "id"))
+                .unwrap_or_default();
+            primary != target_uid || identity_org_key(a) != target_org
+        })
+        .cloned()
+        .collect();
+    all.push(account_obj.clone());
+    all
+}
+
 /// 把账号写入官方认证文件（原子写 + 写后校验）。对照 server.py `write_account_to_auth_file`。
 pub fn write_account_to_auth_file(acc: &Value, variant: WbVariant) -> Result<(), String> {
     let path = auth_file_path(variant);
@@ -191,23 +226,11 @@ pub fn write_account_to_auth_file(acc: &Value, variant: WbVariant) -> Result<(),
     let account_obj = build_account_obj(acc);
     let auth_obj = build_auth_obj(acc);
 
-    // 把目标账号并入 allAccounts（去重：按 uid 或 id）
-    let target_uid = get_str(acc, "uid").unwrap_or_default();
-    let mut all: Vec<Value> = all_accounts.as_array().cloned().unwrap_or_default();
-    all.retain(|a| {
-        let primary = a
-            .get("uid")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                a.get("id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-            })
-            .unwrap_or("");
-        primary != target_uid
-    });
-    all.push(account_obj.clone());
+    let all = merge_into_all_accounts(
+        all_accounts.as_array().map(Vec::as_slice).unwrap_or(&[]),
+        acc,
+        &account_obj,
+    );
     eprintln!("[auth] write_account: merged allAccounts len={}", all.len());
 
     let session = json!({
@@ -242,6 +265,15 @@ pub fn write_account_to_auth_file(acc: &Value, variant: WbVariant) -> Result<(),
         return Err("认证文件写后校验失败，未写入目标账号".to_string());
     }
     Ok(())
+}
+
+/// 取 JSON 对象里的非空字符串字段（语义同 `account::get_str`）。
+fn map_str(map: &Map<String, Value>, key: &str) -> Option<String> {
+    map.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 fn setdefault(map: &mut Map<String, Value>, key: &str, value: Value) {
@@ -388,6 +420,46 @@ mod tests {
         assert_eq!(parse_ts(root["auth"].get("expiresAt")), Some(1791912333558));
         assert_eq!(parse_ts(root["auth"].get("refreshToken")), None);
         assert_eq!(parse_ts(Some(&json!("1786728333"))), Some(1786728333));
+    }
+
+    /// 切换到企业版时，官方账号列表要保留同 uid 的个人版条目。
+    #[test]
+    fn all_accounts_keeps_other_organization_with_same_uid() {
+        let personal = json!({"uid": "u-1", "nickname": "同一个人"});
+        let enterprise = json!({"uid": "u-1", "nickname": "同一个人", "enterpriseId": "ent-1"});
+
+        let merged = merge_into_all_accounts(
+            &[personal.clone()],
+            &enterprise,
+            &build_account_obj(&enterprise),
+        );
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0], personal);
+        assert_eq!(merged[1]["enterpriseId"], "ent-1");
+
+        // 同一组织的旧条目仍然要被替换掉，避免重复
+        let merged = merge_into_all_accounts(&merged, &personal, &build_account_obj(&personal));
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0]["enterpriseId"], "ent-1");
+        assert_eq!(merged[1]["uid"], "u-1");
+        assert!(merged[1].get("enterpriseId").is_none());
+    }
+
+    #[test]
+    fn account_obj_carries_enterprise_from_account_record() {
+        let obj = build_account_obj(
+            &json!({"uid": "u-1", "enterpriseId": "ent-1", "enterpriseName": "某公司"}),
+        );
+        assert_eq!(obj["enterpriseId"], "ent-1");
+        assert_eq!(obj["enterpriseName"], "某公司");
+
+        // profile_raw 已有组织信息时以官方原样为准
+        let obj = build_account_obj(&json!({
+            "uid": "u-1",
+            "enterpriseId": "ent-local",
+            "profile_raw": {"enterpriseId": "ent-official"},
+        }));
+        assert_eq!(obj["enterpriseId"], "ent-official");
     }
 
     #[test]

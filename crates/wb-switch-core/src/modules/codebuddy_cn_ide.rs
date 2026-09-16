@@ -182,19 +182,26 @@ fn parse_token_from_secret(secret: &str) -> Option<(Option<String>, String)> {
     Some((None, trimmed.to_string()))
 }
 
+/// 用本机 CN IDE 的登录态反查账号库记录。
+///
+/// 先按 access_token 精确匹配：同一手机号在个人版与企业版下 uid 相同，只有 token
+/// 能区分是哪个组织；token 对不上（例如本 App 之外刷新过）再按 uid 兜底。
 fn match_account_for_token(uid: Option<&str>, token: &str) -> Option<Value> {
-    let accounts = account::load_accounts();
-    if let Some(uid) = uid.filter(|s| !s.is_empty()) {
-        if let Some(acc) = accounts
-            .iter()
-            .find(|a| get_str(a, "uid").as_deref() == Some(uid))
-        {
-            return Some(acc.clone());
-        }
-    }
-    accounts
-        .into_iter()
+    match_account_in(&account::load_accounts(), uid, token)
+}
+
+fn match_account_in(accounts: &[Value], uid: Option<&str>, token: &str) -> Option<Value> {
+    if let Some(acc) = accounts
+        .iter()
         .find(|a| get_str(a, "access_token").as_deref() == Some(token))
+    {
+        return Some(acc.clone());
+    }
+    let uid = uid.filter(|s| !s.is_empty())?;
+    accounts
+        .iter()
+        .find(|a| get_str(a, "uid").as_deref() == Some(uid))
+        .cloned()
 }
 
 fn windows_image_stem(name: &str) -> &str {
@@ -1090,6 +1097,26 @@ mod tests {
         assert_eq!(v["auth"]["accessToken"], "tok-abc");
         assert_eq!(v["account"]["uid"], "u-42");
         assert_eq!(v["id"], "Tencent-Cloud.genie-ide-cn");
+    }
+
+    /// 同 uid 的个人版 / 企业版并存时，只有 token 能认出是哪个组织。
+    #[test]
+    fn match_account_prefers_token_over_shared_uid() {
+        let accounts = vec![
+            json!({"id": "personal", "uid": "u-1", "access_token": "tok-personal"}),
+            json!({"id": "enterprise", "uid": "u-1", "enterpriseId": "ent-1", "access_token": "tok-enterprise"}),
+        ];
+
+        assert_eq!(
+            match_account_in(&accounts, Some("u-1"), "tok-enterprise").unwrap()["id"],
+            "enterprise"
+        );
+        // token 对不上（本 App 之外刷新过）才按 uid 兜底
+        assert_eq!(
+            match_account_in(&accounts, Some("u-1"), "tok-unknown").unwrap()["id"],
+            "personal"
+        );
+        assert!(match_account_in(&accounts, None, "tok-unknown").is_none());
     }
 
     #[test]

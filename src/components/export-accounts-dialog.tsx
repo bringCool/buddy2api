@@ -22,9 +22,10 @@ interface Props {
   onExported?: (count: number) => void;
 }
 
-/** 账号展示名（与账号卡片一致）。 */
+/** 账号展示名（与账号卡片一致）；带上组织归属，区分同一手机号的多个组织。 */
 function accountLabel(a: AccountMeta): string {
-  return a.nickname || a.email || a.uid || a.id;
+  const name = a.nickname || a.email || a.uid || a.id;
+  return a.enterpriseName ? `${name} · ${a.enterpriseName}` : name;
 }
 
 /** 导出文件名：wb-switch-accounts-YYYY-MM-DD.json */

@@ -25,9 +25,10 @@ interface Props {
   variant?: WbVariant;
 }
 
-/** 导入预览账号展示名（脱敏展示：昵称/邮箱/uid）。 */
+/** 导入预览账号展示名（脱敏展示：昵称/邮箱/uid + 组织归属）。 */
 function previewLabel(a: ImportPreviewAccount): string {
-  return a.nickname || a.email || a.uid || `第 ${a.index + 1} 项`;
+  const name = a.nickname || a.email || a.uid || `第 ${a.index + 1} 项`;
+  return a.enterpriseName ? `${name} · ${a.enterpriseName}` : name;
 }
 
 /** 导入账号弹框：选 JSON 文件 → 后端解析预览 → 勾选账号 → 导入合并。 */

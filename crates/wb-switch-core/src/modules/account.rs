@@ -27,12 +27,18 @@ fn save_accounts_to_path(path: &Path, accounts: &[Value]) -> std::io::Result<()>
     atomic_write(path, &content)
 }
 
+/// 按 id 或 uid 查找：先整表匹配 id，再整表回退匹配 uid。
+///
+/// 同一手机号在不同组织下 uid 相同，uid 已不再唯一；逐条 `id || uid` 会让靠前
+/// 记录的 uid 抢在靠后记录的 id 之前命中，把操作打到错误账号上。
 fn find_account_in(accounts: &[Value], account_id: &str) -> Option<Value> {
     accounts
         .iter()
-        .find(|account| {
-            account.get("id").and_then(Value::as_str) == Some(account_id)
-                || account.get("uid").and_then(Value::as_str) == Some(account_id)
+        .find(|account| account.get("id").and_then(Value::as_str) == Some(account_id))
+        .or_else(|| {
+            accounts
+                .iter()
+                .find(|account| account.get("uid").and_then(Value::as_str) == Some(account_id))
         })
         .cloned()
 }
@@ -77,7 +83,9 @@ pub fn account_meta(acc: &Value) -> Value {
         "uid": acc.get("uid"),
         "email": acc.get("email"),
         "nickname": acc.get("nickname"),
+        "enterpriseId": identity_enterprise_id(acc),
         "enterpriseName": acc.get("enterpriseName"),
+        "orgKey": identity_org_key(acc),
         "expiresAt": acc.get("expiresAt"),
         "refreshExpiresAt": acc.get("refreshExpiresAt"),
         "refreshedAt": acc.get("refreshedAt"),
@@ -112,6 +120,53 @@ fn inherit_existing_variant(existing: &Value, collected: &mut Value) {
     }
 }
 
+/// 取账号档案字段：先看顶层，再看 `profile_raw`（官方 `/login/account` 原样响应）。
+///
+/// 账号库记录把官方档案放在 `profile_raw` 里，而官方认证文件的 `account` 对象是平铺的，
+/// 两种形状都要能取到。
+fn profile_field(account: &Value, key: &str) -> Option<String> {
+    get_str(account, key).or_else(|| get_str(account.get("profile_raw")?, key))
+}
+
+/// 账号所属企业 ID；个人版 / 官方未返回时为 None。
+pub fn identity_enterprise_id(account: &Value) -> Option<String> {
+    profile_field(account, "enterpriseId").or_else(|| profile_field(account, "enterprise_id"))
+}
+
+/// 账号所属组织的稳定标识。
+///
+/// 同一手机号可以同时属于个人版与一个或多个企业组织，它们共用一个 uid，但 token、
+/// 积分、企业归属各自独立，必须按「uid + 组织」判定是不是同一个账号。
+///
+/// 以 OneID 账号（`oneidAccountId`）为准：官方 `/v2/plugin/login/account` 不保证
+/// 返回 `enterpriseId`（实测个人版整个字段都没有），OneID 账号才是区分同一手机号
+/// 下各组织身份的字段。其后依次回落：企业 ID → 企业 SSO 域 → 账号类型
+/// （personal/enterprise）。一层都取不到时所有账号落到同一个组织，退化为改动前的
+/// 「只看 uid」。
+pub fn identity_org_key(account: &Value) -> String {
+    if let Some(oneid) = profile_field(account, "oneidAccountId") {
+        return format!("oneid:{oneid}");
+    }
+    if let Some(enterprise_id) = identity_enterprise_id(account) {
+        return format!("eid:{enterprise_id}");
+    }
+    if let Some(domain) = sso_domain(account) {
+        return format!("sso:{domain}");
+    }
+    let kind = profile_field(account, "accountType")
+        .or_else(|| profile_field(account, "type"))
+        .unwrap_or_else(|| "personal".to_string());
+    format!("kind:{}", kind.to_ascii_lowercase())
+}
+
+/// 企业 SSO 域（官方档案的 `sso.domain`）。
+fn sso_domain(account: &Value) -> Option<String> {
+    let sso = account
+        .get("sso")
+        .or_else(|| account.get("profile_raw")?.get("sso"))?;
+    get_str(sso, "domain")
+}
+
 /// 返回可用于 UID 缺失场景的真实邮箱。历史展示占位值不参与身份匹配。
 fn identity_email(account: &Value) -> Option<String> {
     let email = get_str(account, "email")?;
@@ -128,12 +183,17 @@ fn identity_email(account: &Value) -> Option<String> {
 
 /// 按稳定身份将采集结果合并到账号列表，并返回最终持久化的账号。
 ///
-/// 非空 UID 始终优先；仅当新账号没有 UID 时，才使用真实邮箱兜底。
-/// 命中已有身份时保留本地 id，避免调用方持有的账号引用失效。
+/// 身份 = UID + 组织（见 [`identity_org_key`]）：同一手机号在个人版与企业版下 uid
+/// 相同，属于两个独立账号，不能互相覆盖。非空 UID 始终优先；仅当新账号没有 UID 时，
+/// 才使用真实邮箱兜底。命中已有身份时保留本地 id，避免调用方持有的账号引用失效。
 pub fn upsert_collected_account(accounts: &mut Vec<Value>, mut collected: Value) -> Value {
     let collected_uid = get_str(&collected, "uid");
     let collected_email = identity_email(&collected);
+    let collected_org = identity_org_key(&collected);
     let matches_identity = |existing: &Value| {
+        if identity_org_key(existing) != collected_org {
+            return false;
+        }
         if let Some(uid) = collected_uid.as_deref() {
             return get_str(existing, "uid").as_deref() == Some(uid);
         }
@@ -312,6 +372,137 @@ mod tests {
 
         assert_eq!(accounts.len(), 2);
         assert_eq!(saved["id"], "new");
+    }
+
+    /// 同 uid 不同企业组织（个人版 / 企业版）是两个独立账号，不能互相覆盖。
+    #[test]
+    fn same_uid_in_different_organizations_are_retained() {
+        let mut accounts = vec![account("personal", Some("uid-1"), "同一个人", None)];
+        let mut enterprise = account("enterprise", Some("uid-1"), "同一个人", None);
+        enterprise["enterpriseId"] = json!("ent-1");
+        let saved = upsert_collected_account(&mut accounts, enterprise);
+
+        assert_eq!(accounts.len(), 2);
+        assert_eq!(saved["id"], "enterprise");
+        assert_eq!(accounts[0]["id"], "personal");
+        assert_eq!(accounts[0]["access_token"], "token-personal");
+    }
+
+    #[test]
+    fn same_uid_in_same_organization_is_merged() {
+        let mut existing = account("stable", Some("uid-1"), "旧名称", None);
+        existing["enterpriseId"] = json!("ent-1");
+        let mut accounts = vec![existing];
+        let mut collected = account("generated", Some("uid-1"), "新名称", None);
+        collected["enterpriseId"] = json!("ent-1");
+        let saved = upsert_collected_account(&mut accounts, collected);
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(saved["id"], "stable");
+        assert_eq!(saved["access_token"], "token-generated");
+    }
+
+    /// 个人版没有企业 ID：字段缺失、null、空串都应视为同一个「无组织」身份。
+    #[test]
+    fn missing_blank_and_null_enterprise_id_are_the_same_identity() {
+        let mut existing = account("stable", Some("uid-1"), "旧名称", None);
+        existing["enterpriseId"] = Value::Null;
+        let mut accounts = vec![existing];
+        let mut collected = account("generated", Some("uid-1"), "新名称", None);
+        collected["enterpriseId"] = json!("   ");
+        let saved = upsert_collected_account(&mut accounts, collected);
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(saved["id"], "stable");
+    }
+
+    #[test]
+    fn enterprise_id_falls_back_to_profile_raw() {
+        let account = json!({"uid": "u-1", "profile_raw": {"enterpriseId": "ent-1"}});
+        assert_eq!(identity_enterprise_id(&account).as_deref(), Some("ent-1"));
+        assert_eq!(identity_enterprise_id(&json!({"uid": "u-1"})), None);
+    }
+
+    /// OneID 账号优先；官方 /login/account 不一定返回 enterpriseId，其余按优先级回落。
+    #[test]
+    fn org_key_prefers_oneid_then_falls_back() {
+        assert_eq!(
+            identity_org_key(&json!({"profile_raw": {"oneidAccountId": "oneid-1"}})),
+            "oneid:oneid-1"
+        );
+        assert_eq!(
+            identity_org_key(&json!({
+                "enterpriseId": "ent-1",
+                "profile_raw": {"oneidAccountId": "oneid-1"},
+            })),
+            "oneid:oneid-1"
+        );
+        assert_eq!(identity_org_key(&json!({"enterpriseId": "ent-1"})), "eid:ent-1");
+        assert_eq!(
+            identity_org_key(&json!({"profile_raw": {"sso": {"domain": "corp.example.com"}}})),
+            "sso:corp.example.com"
+        );
+        assert_eq!(
+            identity_org_key(&json!({"profile_raw": {"type": "Enterprise"}})),
+            "kind:enterprise"
+        );
+        // 官方实测的个人版档案：企业字段全空，落到账号类型
+        assert_eq!(
+            identity_org_key(&json!({
+                "profile_raw": {
+                    "type": "personal",
+                    "accountType": "",
+                    "oneidAccountId": "",
+                    "sso": {"domain": "", "domainModifiedTimes": 0},
+                }
+            })),
+            "kind:personal"
+        );
+        // 认证文件里的 account 对象是平铺结构，同样要能识别
+        assert_eq!(
+            identity_org_key(&json!({"uid": "u-1", "oneidAccountId": "oneid-1"})),
+            "oneid:oneid-1"
+        );
+        assert_eq!(identity_org_key(&json!({"uid": "u-1"})), "kind:personal");
+    }
+
+    /// 官方档案只有 type 区分时，个人版与企业版也要拆成两条。
+    #[test]
+    fn same_uid_is_split_by_account_type_when_enterprise_id_is_absent() {
+        let mut personal = account("personal", Some("uid-1"), "同一个人", None);
+        personal["profile_raw"] = json!({"type": "personal"});
+        let mut enterprise = account("enterprise", Some("uid-1"), "同一个人", None);
+        enterprise["profile_raw"] = json!({"type": "enterprise"});
+
+        let mut accounts = vec![personal];
+        upsert_collected_account(&mut accounts, enterprise);
+        assert_eq!(accounts.len(), 2);
+    }
+
+    /// 同 uid 多账号时，按 id 查找不能被靠前记录的 uid 抢先命中。
+    #[test]
+    fn find_account_prefers_exact_id_over_earlier_uid_match() {
+        let accounts = vec![
+            account("first", Some("shared-uid"), "个人版", None),
+            account("shared-uid", Some("other-uid"), "id 与他人 uid 相同", None),
+        ];
+
+        assert_eq!(
+            find_account_in(&accounts, "shared-uid").unwrap()["nickname"],
+            "id 与他人 uid 相同"
+        );
+        assert_eq!(find_account_in(&accounts, "first").unwrap()["id"], "first");
+    }
+
+    #[test]
+    fn account_meta_exposes_organization() {
+        let meta = account_meta(&json!({"id": "a1", "uid": "u1", "enterpriseId": "ent-1"}));
+        assert_eq!(meta["enterpriseId"], "ent-1");
+        assert_eq!(meta["orgKey"], "eid:ent-1");
+
+        let meta = account_meta(&json!({"id": "a1"}));
+        assert!(meta["enterpriseId"].is_null());
+        assert_eq!(meta["orgKey"], "kind:personal");
     }
 
     #[test]
