@@ -46,7 +46,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYwNEU4RkQ5OEZCN0FGRApSV1Q5ZXZ1WS9lZ0VEd1VuVFpOYjU1OGJGd1NmMVhaWHJTSEdnNVRSSEcweUxWR05TN0h2WnloSwo=",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENBRkUwNDQ5MTZFQkRFRTEKUldUaDN1c1dTUVQreWt2T0J4MW5ZVHp5T2orTnhvMnladnRaTjBsL2NRcDdLUEppdXA5cjAzWWMK",
       "endpoints": [
         "https://github.com/bringCool/buddy2api/releases/latest/download/latest.json",
         "https://github.com/bringCool/buddy2api/releases/latest/download/latest-{{target}}-{{arch}}.json",
