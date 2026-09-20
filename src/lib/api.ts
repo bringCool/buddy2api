@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AccountMeta,
   AccountRecord,
+  AppNotification,
   AppStatus,
   AutoRotateConfig,
   CodeBuddyCliInstallResult,
@@ -15,7 +16,6 @@ import type {
   CreditExpiry,
   CreditStatistics,
   TokenStatistics,
-  CopyResult,
   GithubConfig,
   ImportPreviewAccount,
   ImportResult,
@@ -23,9 +23,15 @@ import type {
   OAuthStartResult,
   ProxyConfig,
   ProxyStatus,
+  RateLimitConfig,
+  RateLimitHookStatus,
+  RateLimitsPayload,
   RotateLog,
   RotateStatus,
   Session,
+  SessionCopyReport,
+  SessionLinksPreview,
+  SessionSyncSelection,
   SwitchResult,
   TravelConfig,
   TravelStatus,
@@ -49,7 +55,8 @@ const DEMO_READ_COMMANDS = new Set([
   "get_token_statistics",
   "get_checkin_logs", "get_auto_rotate_config", "rotate_status", "get_rotate_logs",
   "get_github_config", "check_update", "get_launch_at_login_enabled", "switch_progress",
-  "get_travel_status", "get_auto_travel_config",
+  "get_travel_status", "get_auto_travel_config", "get_rate_limits",
+  "get_rate_limit_hook_status", "get_rate_limit_config",
 ]);
 
 export function isDemoMode(): boolean {
@@ -101,15 +108,25 @@ const ROUTES: Record<string, Route> = {
   switch_account: { method: "POST", path: "/api/switch" },
   list_sessions: { method: "GET", path: "/api/sessions" },
   copy_sessions: { method: "POST", path: "/api/sessions/copy" },
+  session_links_preview: { method: "POST", path: "/api/session-links/preview" },
   get_checkin_status: { method: "GET", path: "/api/checkin/status" },
   get_credit_expiry: { method: "POST", path: "/api/credits" },
   get_credit_statistics: { method: "GET", path: "/api/credits/stats" },
   get_token_statistics: { method: "GET", path: "/api/token-stats" },
+  get_rate_limits: { method: "GET", path: "/api/rate-limits" },
+  get_rate_limit_hook_status: { method: "GET", path: "/api/rate-limits/hook-status" },
+  install_rate_limit_hook: { method: "POST", path: "/api/rate-limits/install-hook" },
+  uninstall_rate_limit_hook: { method: "POST", path: "/api/rate-limits/uninstall-hook" },
+  get_rate_limit_config: { method: "GET", path: "/api/rate-limits/config" },
+  save_rate_limit_config: { method: "POST", path: "/api/rate-limits/config" },
   checkin: { method: "POST", path: "/api/checkin" },
   checkin_all: { method: "POST", path: "/api/checkin/all" },
   get_auto_checkin_config: { method: "GET", path: "/api/checkin/config" },
   save_auto_checkin_config: { method: "POST", path: "/api/checkin/config" },
   get_checkin_logs: { method: "GET", path: "/api/checkin/logs" },
+  list_notifications: { method: "GET", path: "/api/notifications" },
+  record_notification: { method: "POST", path: "/api/notifications/record" },
+  clear_notifications: { method: "POST", path: "/api/notifications/clear" },
   get_travel_status: { method: "GET", path: "/api/travel/status" },
   get_auto_travel_config: { method: "GET", path: "/api/travel/config" },
   save_auto_travel_config: { method: "POST", path: "/api/travel/config" },
@@ -205,6 +222,12 @@ export function installCodebuddyCliHelper(): Promise<CodeBuddyCliInstallResult> 
   return call("install_codebuddy_cli_helper");
 }
 
+/**
+ * 切换 CodeBuddy CLI 默认账号。
+ *
+ * @param closeRunningCli 已废弃：后端一律先关闭正在运行的 CLI 再写状态，该入参被忽略。
+ *   仅为兼容既有调用方保留（HTTP 路径仍会原样发送）。
+ */
 export function switchCodebuddyCliAccount(
   accountId: string,
   closeRunningCli = false,
@@ -316,6 +339,7 @@ export function switchAccount(args: {
   restart?: boolean;
   shareSessions?: boolean;
   copySessionIds?: string[];
+  syncSelections?: SessionSyncSelection[];
 }): Promise<SwitchResult> {
   return call("switch_account", args as unknown as Record<string, unknown>);
 }
@@ -333,11 +357,27 @@ export function listSessions(variant?: WbVariant): Promise<{
   return call("list_sessions", variantArgs(variant));
 }
 
+/** 把勾选会话复制到指定账号；返回 core 同形的复制报告（copied / alreadyLinked / errors）。 */
 export function copySessions(
   targetAccountId: string,
   sessionIds: string[],
-): Promise<{ sourceUid: string; targetUid: string; copied: CopyResult[] }> {
+): Promise<SessionCopyReport & { variant?: WbVariant }> {
   return call("copy_sessions", { targetAccountId, sessionIds });
+}
+
+/**
+ * 预览「当前账号 → 目标账号」可同步的关联会话（只读）。
+ *
+ * 默认勾选与可选模式都来自后端：前端只按 `defaultChecked` / `availableModes` 渲染，
+ * 不自行扩大权限。`variant` 缺省由后端取目标账号自身档位。
+ */
+export function sessionLinksPreview(
+  targetAccountId: string,
+  variant?: WbVariant,
+): Promise<SessionLinksPreview> {
+  const args: Record<string, unknown> = { targetAccountId };
+  if (variant === "ai") args.variant = variant;
+  return call("session_links_preview", args);
 }
 
 /** 打开系统设置授权面板（桌面端专用；webui 模式由服务进程权限决定，无操作）。 */
@@ -432,6 +472,42 @@ export function getCreditStatistics(refresh = false): Promise<CreditStatistics> 
 
 export function getTokenStatistics(days?: number): Promise<TokenStatistics> { return call("get_token_statistics", days ? { days } : undefined); }
 
+/**
+ * 模型限额台账：一次返回**全部账号**当前受限的模型与官方恢复时刻。
+ *
+ * 不传档位：扫描本身就是全局的（两档位各扫一遍）。后端把 hook 信号与日志扫描
+ * 合并后返回，日志扫描按 5 分钟节流（`scannedAt` 是最近一次真实扫描时刻）。
+ */
+export function getRateLimits(): Promise<RateLimitsPayload> {
+  return call("get_rate_limits");
+}
+
+/** 限额 hook 安装状态（脚本 + 三处客户端配置）。 */
+export function getRateLimitHookStatus(): Promise<RateLimitHookStatus> {
+  return call("get_rate_limit_hook_status");
+}
+
+/** 安装限额 hook（幂等、写前备份；返回安装后的状态）。 */
+export function installRateLimitHook(): Promise<RateLimitHookStatus> {
+  return call("install_rate_limit_hook");
+}
+
+/** 卸载限额 hook（移除注册条目并尽量逐字节还原配置）。 */
+export function uninstallRateLimitHook(): Promise<RateLimitHookStatus> {
+  return call("uninstall_rate_limit_hook");
+}
+
+/** 限额监听开关（关闭后不扫日志、不渲染限额 chip）。 */
+export function getRateLimitConfig(): Promise<RateLimitConfig> {
+  return call("get_rate_limit_config");
+}
+
+export function saveRateLimitConfig(config: RateLimitConfig): Promise<RateLimitConfig> {
+  return call("save_rate_limit_config", {
+    config: config as unknown as Record<string, unknown>,
+  });
+}
+
 export function checkin(accountId: string): Promise<CheckinResult> {
   return call("checkin", { accountId });
 }
@@ -506,7 +582,20 @@ export function getRotateStatus(): Promise<RotateStatus> {
   return call("rotate_status");
 }
 
-export function runRotate(): Promise<{ status: string; reason?: string; error?: string; to?: string }> {
+/**
+ * 手动触发一次轮换检查。
+ *
+ * `notify`（可选）：因存活门控被推迟、但除门控外本来会切换时由 core 组装好的提示内容。
+ * 桌面端由宿主（Rust）直接投递系统通知，这里只保留字段以描述完整返回契约；
+ * 无头 server 不投递，调用方按需自行处理。
+ */
+export function runRotate(): Promise<{
+  status: string;
+  reason?: string;
+  error?: string;
+  to?: string;
+  notify?: { title: string; body: string };
+}> {
   return call("run_rotate");
 }
 
@@ -589,4 +678,30 @@ export function proxyBaseUrl(status: ProxyStatus): string {
   if (/^https?:\/\//.test(status.baseUrl)) return status.baseUrl;
   if (isDesktop() && !isDemoMode()) return "";
   return new URL(status.baseUrl, API_BASE || window.location.origin).href;
+}
+
+// ---------------------------------------------------------------------------
+// 通知存档（toast 事后可查）
+// ---------------------------------------------------------------------------
+
+/** 记录一条应用内提示（由 `lib/notify.ts` 统一调用；失败不影响提示本身）。 */
+export function recordNotification(
+  level: AppNotification["level"],
+  title: string,
+  description?: string,
+): Promise<{ recorded: boolean }> {
+  if (demoModeEnabled) return Promise.resolve({ recorded: false });
+  return call("record_notification", { level, title, description });
+}
+
+/** 读取最近的通知（新的在前，最多 100 条）。 */
+export function listNotifications(): Promise<{ items: AppNotification[] }> {
+  if (demoModeEnabled) return Promise.resolve({ items: [] });
+  return call("list_notifications");
+}
+
+/** 清空通知存档。 */
+export function clearNotifications(): Promise<{ cleared: boolean }> {
+  if (demoModeEnabled) return Promise.resolve({ cleared: false });
+  return call("clear_notifications");
 }

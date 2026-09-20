@@ -454,9 +454,11 @@ const MODEL_COLORS = [
   "var(--data-series-indigo)",
   "var(--data-series-sky)",
   "var(--data-series-lime)",
+  "var(--data-series-orange)",
+  "var(--data-series-pink)",
+  "var(--data-series-cyan)",
+  "var(--data-series-slate)",
 ];
-const MAX_MODELS = 5;
-const OTHER_MODEL = "其他";
 
 interface ModelChartPoint {
   date: string;
@@ -512,7 +514,7 @@ function CreditBarShape({
   );
 }
 
-/** 从官方 daily（全量按模型聚合）构建层叠数据；模型按总消耗取前 N，其余并入「其他」。 */
+/** 从官方 daily（全量按模型聚合）构建层叠数据；模型按总消耗降序全部保留。 */
 function buildStackedChart(
   daily: CreditStatsDailyPoint[],
 ): { models: string[]; points: ModelChartPoint[] } {
@@ -522,23 +524,18 @@ function buildStackedChart(
       modelTotals.set(model.model, (modelTotals.get(model.model) ?? 0) + model.credit);
     }
   }
-  const topModels = [...modelTotals.entries()]
+  const models = [...modelTotals.entries()]
     .sort((left, right) => right[1] - left[1])
-    .slice(0, MAX_MODELS)
     .map(([model]) => model);
 
   const points: ModelChartPoint[] = daily.map((point) => {
     const entry: ModelChartPoint = { date: point.date, total: point.usage };
     for (const model of point.models ?? []) {
-      const key = topModels.includes(model.model) ? model.model : OTHER_MODEL;
+      const key = model.model;
       entry[key] = (typeof entry[key] === "number" ? entry[key] : 0) + model.credit;
     }
     return entry;
   });
-  const models = [...topModels];
-  if (points.some((point) => point[OTHER_MODEL] !== undefined)) {
-    models.push(OTHER_MODEL);
-  }
   return { models, points };
 }
 
@@ -783,7 +780,7 @@ function AccountTable({
                     <td className="max-w-[240px] px-4 py-3 sm:px-5">
                       <button
                         type="button"
-                        className="min-w-0 max-w-full text-left outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-ring"
+                        className="min-w-0 max-w-full cursor-pointer text-left outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => onSelect(account.accountId)}
                       >
                         <span className="flex min-w-0 items-center gap-2">
@@ -888,7 +885,7 @@ function ModelBreakdownRows({ models }: { models: CreditOfficialUsageModel[] }) 
 
   return (
     <div className="space-y-3">
-      {models.slice(0, 8).map((model) => {
+      {models.map((model) => {
         const ratio = totalCredit > 0 ? model.credit / totalCredit : totalRequests > 0 ? model.requestCount / totalRequests : 0;
         const percent = ratio * 100;
         const label = model.model === "—" ? "未知模型" : model.model;
@@ -978,7 +975,7 @@ function ModelBreakdown({
                   <button
                     key={option.key}
                     type="button"
-                    className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                    className={`cursor-pointer rounded-md px-2.5 py-1.5 text-xs transition-colors ${
                       range === option.key
                         ? "bg-background font-medium text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
@@ -1004,7 +1001,6 @@ function ModelBreakdown({
             <span className="font-medium text-foreground">合计 {formatCredits(totalCredit)} 积分</span>
           </div>
           <ModelBreakdownRows models={models} />
-          {models.length > 8 && <p className="mt-3 text-[11px] text-muted-foreground">已展示消耗最高的 8 个模型，其余模型仍计入上方合计。</p>}
         </CardContent>
       )}
       </Card>
@@ -1349,11 +1345,8 @@ function UnselectedRecentEvents({ events }: { events: CreditStatsEvent[] }) {
 let cachedStatistics: CreditStatistics | null = null;
 let statisticsInflight: Promise<CreditStatistics> | null = null;
 
-/** 进入统计页时距上次刷新超过此时长（ms）则自动触发一次刷新统计 */
+/** 进入统计页时距上次采集超过此时长（ms）则自动重新采集一次 */
 const STATISTICS_AUTO_REFRESH_MS = 30 * 60 * 1000;
-
-/** 最近一次「刷新统计」完成的时刻（会话级，0 = 从未刷新过） */
-let lastStatisticsRefreshAt = 0;
 
 function rememberStatistics(next: CreditStatistics): CreditStatistics {
   cachedStatistics = next;
@@ -1405,7 +1398,6 @@ export default function CreditStatsPage() {
           await refreshCredits(ids);
         }
         setStats(await loadCachedStatistics(refresh));
-        if (refresh) lastStatisticsRefreshAt = Date.now();
       } catch (cause) {
         setError(api.asError(cause));
       } finally {
@@ -1416,12 +1408,17 @@ export default function CreditStatsPage() {
   );
 
   useEffect(() => {
-    // 已有会话缓存且距上次刷新超过 30 分钟时，进入页面自动刷新一次统计
-    const autoRefresh =
-      !api.isDemoMode() &&
-      cachedStatistics !== null &&
-      Date.now() - lastStatisticsRefreshAt >= STATISTICS_AUTO_REFRESH_MS;
-    void load(autoRefresh);
+    void (async () => {
+      // 先渲染本地缓存（后端只读磁盘，不用等网络）
+      await load(false);
+      if (api.isDemoMode()) return;
+      // 过期只看后端记录的采集时刻：会话内变量每次启动都归零，判断不出
+      // 「缓存其实是几小时前采的」，所以刚打开应用时不会自动刷新。
+      const collectedAt = cachedStatistics?.officialUsage?.collectedAt ?? 0;
+      if (collectedAt > 0 && Date.now() - collectedAt < STATISTICS_AUTO_REFRESH_MS) return;
+      if (useAccountsStore.getState().accounts.length === 0) return;
+      await load(true);
+    })();
   }, [load]);
 
   const variantByAccountId = useMemo(() => {

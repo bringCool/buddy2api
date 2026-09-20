@@ -9,9 +9,9 @@ use serde_json::{json, Value};
 use tauri::Emitter;
 use buddy2api_core::modules::{
     account, auth_file, checkin, codebuddy_cli, codebuddy_cn_ide, codebuddy_ide, credit_usage,
-    credits, export_import, oauth, openai_proxy, process, refresh, rotate, session, switch,
-    token_stats, travel,
-    update, variant::WbVariant,
+    credits, export_import, limits, notifications, oauth, openai_proxy, process, rate_limit_events,
+    rate_limit_hook, refresh, rotate, session, switch, token_stats, travel, update,
+    variant::WbVariant,
 };
 
 #[derive(Serialize)]
@@ -43,12 +43,11 @@ fn build_app_status(variant: WbVariant) -> AppStatus {
     let current = auth.as_ref().and_then(|a| {
         let acct = a.get("account").cloned().unwrap_or_else(|| json!({}));
         Some(json!({
-            "uid": acct.get("uid"),
-            "nickname": acct.get("nickname"),
-            "email": acct.get("email"),
-            // 同一手机号在不同组织下 uid 相同，前端要靠组织标识才能认出是哪一条账号
+            "uid": account::display_value(&acct, "uid"),
+            "nickname": account::display_value(&acct, "nickname"),
+            "email": account::display_value(&acct, "email"),
             "enterpriseId": account::identity_enterprise_id(&acct),
-            "enterpriseName": acct.get("enterpriseName"),
+            "enterpriseName": account::display_value(&acct, "enterpriseName"),
             "orgKey": account::identity_org_key(&acct),
         }))
     });
@@ -99,8 +98,10 @@ pub async fn install_codebuddy_cli_helper() -> Result<Value, String> {
 
 /// POST /api/codebuddy-cli/switch —— 只切换 CodeBuddy CLI，不重启 WorkBuddy。
 ///
-/// `close_running_cli`：账号页确认后的跨站切换会关闭正在运行的 CLI；
-/// 自动轮换不传，保持「下次会话生效」。
+/// 任何切换都会**先关闭正在运行的 CodeBuddy CLI 再写状态**：key 是进程级快照，
+/// 不关进程就会出现"新默认账号 + 旧进程仍持旧 key"的窗口。当前 CLI 会话因此会中断。
+///
+/// `close_running_cli` 入参**已废弃**（保留接受但忽略），仅为不破坏既有调用方。
 ///
 /// async + spawn_blocking：切换会用登录 shell 定位 node 并执行 apiKeyHelper
 /// 校验账号（子进程无超时），同步 command 会阻塞主线程造成 UI 卡顿。
@@ -112,11 +113,10 @@ pub async fn switch_codebuddy_cli_account(
     if account_id.trim().is_empty() {
         return Err("缺少 accountId".to_string());
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        codebuddy_cli::switch_active_account(&account_id, close_running_cli.unwrap_or(false))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let _ = close_running_cli;
+    tauri::async_runtime::spawn_blocking(move || codebuddy_cli::switch_active_account(&account_id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// GET /api/codebuddy-cn-ide/status —— CodeBuddy IDE 安装/运行/当前账号。
@@ -310,7 +310,9 @@ pub fn reveal_app_in_finder() -> Result<(), String> {
     Ok(())
 }
 
-/// POST /api/switch —— 切换账号（备份 → 关进程 → 复制会话 → 写认证 → 重启）。
+/// POST /api/switch —— 切换账号（备份 → 关进程 → 恢复/复制/同步会话 → 写认证 → 重启）。
+///
+/// `syncSelections` 与 HTTP 端同形（`[{groupId, previewToken, mode}]`）。
 ///
 /// async + spawn_blocking：切换中关闭/启动 WorkBuddy 会阻塞数十秒，
 /// 若在同步 command（主线程）执行会卡死整个 UI（loading 遮罩无法渲染）。
@@ -321,6 +323,7 @@ pub async fn switch_account(
     restart: Option<bool>,
     share_sessions: Option<bool>,
     copy_session_ids: Option<Vec<String>>,
+    sync_selections: Option<Value>,
 ) -> Result<Value, String> {
     if account_id.trim().is_empty() {
         return Err("缺少 accountId".to_string());
@@ -328,6 +331,9 @@ pub async fn switch_account(
     let restart = restart.unwrap_or(true);
     let share_sessions = share_sessions.unwrap_or(false);
     let copy_ids = copy_session_ids.unwrap_or_default();
+    // 入参形状由 core 校验（缺 groupId / previewToken / mode 一律拒绝）；这里只做透传，
+    // 不在命令层做业务判定。
+    let sync_selections = session::parse_sync_selections(sync_selections.as_ref())?;
     let progress: switch::ProgressFn = Box::new(move |message| {
         let _ = app.emit("switch-progress", json!({ "message": message }));
     });
@@ -338,6 +344,7 @@ pub async fn switch_account(
             restart,
             share_sessions,
             &copy_ids,
+            &sync_selections,
         )
     })
     .await
@@ -378,6 +385,32 @@ pub async fn copy_sessions(
     .map_err(|e| e.to_string())?
 }
 
+/// 预览「当前账号 → 目标账号」的关联会话同步项（桌面端 command）。
+///
+/// 只读：返回 `supported / storeStatus / groups`，其中每组的 `defaultChecked` 与
+/// `availableModes` 是前端勾选权限的唯一来源，前端不得自行扩大。
+/// `variant` 缺省取目标账号自身档位：来源 uid 从该档位的登录态读取，目标与来源必须在
+/// 同一档位内比较（与 `copy_sessions` 的档位约定一致）。与 `POST /api/session-links/preview` 同形。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn session_links_preview(
+    target_account_id: String,
+    variant: Option<String>,
+) -> Result<Value, String> {
+    if target_account_id.trim().is_empty() {
+        return Err("缺少 targetAccountId".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = account::find_account(&target_account_id).ok_or("目标账号不存在")?;
+        let variant = variant
+            .as_deref()
+            .map(|raw| WbVariant::parse(Some(raw)))
+            .unwrap_or_else(|| account::variant_of(&target));
+        session::session_links_preview(variant, &target)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---------------------------------------------------------------------------
 // 阶段 3：签到 + token 刷新
 // ---------------------------------------------------------------------------
@@ -411,6 +444,78 @@ pub async fn get_token_statistics(days: Option<i64>) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || token_stats::get_statistics(days))
         .await
         .map_err(|error| format!("扫描 Token 统计失败: {error}"))
+}
+
+/// GET /api/rate-limits —— 模型限额台账（全部账号当前受限的模型与官方恢复时刻）。
+///
+/// 不接收档位参数：扫描本身就是全局的（两档位各扫一遍）。扫描读取本机日志文件，
+/// 放 blocking 线程避免阻塞主线程；无受限模型时返回空数组，不是错误。
+#[tauri::command]
+pub async fn get_rate_limits() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(limits::get_rate_limits)
+        .await
+        .map_err(|error| format!("扫描模型限额失败: {error}"))
+}
+
+/// GET /api/rate-limits/hook-status —— hook 安装状态（脚本 + 三处客户端配置逐项结果）。
+///
+/// 读三个 `settings.json` 与一个脚本文件，放 blocking 线程避免占用主线程。
+#[tauri::command]
+pub async fn get_rate_limit_hook_status() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(with_hook_runtime_fields)
+        .await
+        .map_err(|error| format!("查询限额 hook 状态失败: {error}"))
+}
+
+/// POST /api/rate-limits/install-hook —— 安装 hook（幂等，写前备份；同时清除「卸载过」标记）。
+#[tauri::command]
+pub async fn install_rate_limit_hook() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let result = rate_limit_hook::install_hook();
+        // 扫描范围随安装结果变化（只对未注册的来源扫日志），缓存必须作废。
+        limits::invalidate_scan_cache();
+        result.map(|_| with_hook_runtime_fields())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// POST /api/rate-limits/uninstall-hook —— 卸载 hook（移除注册条目，尽量逐字节还原）。
+///
+/// 卸载即用户拒绝自动接入：`install_hook` / `hookOptOut` 的置位在 core 里与安装逻辑同处，
+/// 两个宿主（桌面端 / webui）共用同一语义。
+#[tauri::command]
+pub async fn uninstall_rate_limit_hook() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let result = rate_limit_hook::uninstall_hook();
+        limits::invalidate_scan_cache();
+        result.map(|_| with_hook_runtime_fields())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// hook 状态 + 运行期字段（最近一次 hook 事件时刻）。
+fn with_hook_runtime_fields() -> Value {
+    let mut status = rate_limit_hook::hook_status();
+    status["lastEventAt"] = json!(rate_limit_events::last_event_at());
+    status
+}
+
+/// GET /api/rate-limits/config —— 限额监听开关。
+#[tauri::command]
+pub fn get_rate_limit_config() -> Value {
+    crate::modules::config::load_rate_limit_config()
+}
+
+/// POST /api/rate-limits/config —— 保存限额监听开关。
+///
+/// 走 `limits::save_rate_limit_config`：`scanIdeLogs` 变化时作废扫描缓存（下一次按当前
+/// 来源范围重算），否则关掉 IDE 扫描后下一次还会按旧缓存把两个 IDE 扫一遍。
+#[tauri::command]
+pub fn save_rate_limit_config(config: Value) -> Result<Value, String> {
+    limits::save_rate_limit_config(&config).map_err(|e| e.to_string())?;
+    Ok(crate::modules::config::load_rate_limit_config())
 }
 
 /// POST /api/checkin —— 单账号立即签到。
@@ -506,9 +611,14 @@ pub fn rotate_status() -> Value {
 }
 
 /// POST /api/rotate/run —— 手动触发一次轮换检查。
+///
+/// 返回体里的 `notify`（若因存活门控被推迟且未超当日预算）由宿主投递系统通知；
+/// 无头 server 只返回该字段，不投递。
 #[tauri::command]
-pub async fn run_rotate() -> Value {
-    rotate::run_rotate_cycle().await
+pub async fn run_rotate(app: tauri::AppHandle) -> Value {
+    let result = rotate::run_rotate_cycle().await;
+    crate::deliver_rotate_notify(&app, &result);
+    result
 }
 
 /// GET /api/rotate/logs —— 最近轮换日志。
@@ -686,4 +796,30 @@ pub fn set_launch_at_login_enabled(_app: tauri::AppHandle, enabled: bool) -> Res
         let _ = enabled;
         Err("当前平台不支持开机自启".to_string())
     }
+}
+
+// ---------------------------------------------------------------------------
+// 通知存档（toast 事后可查）
+// ---------------------------------------------------------------------------
+
+/// 记录一条应用内提示；前端所有 toast 都会同步写一份，失败不影响提示本身。
+#[tauri::command]
+pub async fn record_notification(
+    level: String,
+    title: String,
+    description: Option<String>,
+) -> Result<(), String> {
+    notifications::record(&level, &title, description.as_deref())
+}
+
+/// 读取最近的通知（新的在前，最多 100 条）。
+#[tauri::command]
+pub async fn list_notifications() -> Result<Value, String> {
+    Ok(json!({ "items": notifications::list()? }))
+}
+
+/// 清空通知存档。
+#[tauri::command]
+pub async fn clear_notifications() -> Result<(), String> {
+    notifications::clear()
 }

@@ -18,8 +18,9 @@ use serde_json::{json, Value};
 
 use buddy2api_core::modules::{
     account, auth_file, checkin, codebuddy_cli, codebuddy_cn_ide, codebuddy_ide, config,
-    credit_usage, credits, export_import, oauth, openai_proxy, process, refresh, rotate, session,
-    switch, token_stats, travel, update, variant::WbVariant,
+    credit_usage, credits, export_import, limits, notifications, oauth, openai_proxy, process, rate_limit_events,
+    rate_limit_hook, refresh, rotate, session, switch, token_stats, travel, update,
+    variant::WbVariant,
 };
 
 /// WorkBuddy 运行状态缓存：Windows 上检测要跑 tasklist（慢），缓存几秒避免
@@ -94,10 +95,31 @@ pub fn router() -> Router {
         .route("/api/switch/progress", get(api_switch_progress))
         .route("/api/sessions", get(api_sessions))
         .route("/api/sessions/copy", post(api_copy_sessions))
+        .route(
+            "/api/session-links/preview",
+            post(api_session_links_preview),
+        )
         .route("/api/checkin/status", get(api_checkin_status))
         .route("/api/credits", post(api_credits))
         .route("/api/credits/stats", get(api_credit_statistics))
         .route("/api/token-stats", get(api_token_statistics))
+        .route("/api/rate-limits", get(api_rate_limits))
+        .route(
+            "/api/rate-limits/hook-status",
+            get(api_rate_limit_hook_status),
+        )
+        .route(
+            "/api/rate-limits/install-hook",
+            post(api_install_rate_limit_hook),
+        )
+        .route(
+            "/api/rate-limits/uninstall-hook",
+            post(api_uninstall_rate_limit_hook),
+        )
+        .route(
+            "/api/rate-limits/config",
+            get(api_rate_limit_config).post(api_save_rate_limit_config),
+        )
         .route("/api/checkin", post(api_checkin))
         .route("/api/checkin/all", post(api_checkin_all))
         .route(
@@ -105,6 +127,9 @@ pub fn router() -> Router {
             get(api_checkin_config).post(api_save_checkin_config),
         )
         .route("/api/checkin/logs", get(api_checkin_logs))
+        .route("/api/notifications", get(api_notifications))
+        .route("/api/notifications/record", post(api_record_notification))
+        .route("/api/notifications/clear", post(api_clear_notifications))
         .route("/api/travel/status", get(api_travel_status))
         .route(
             "/api/travel/config",
@@ -165,12 +190,11 @@ async fn api_status(RawQuery(query): RawQuery) -> Response {
     let current = auth.as_ref().and_then(|a| {
         let acct = a.get("account").cloned().unwrap_or_else(|| json!({}));
         Some(json!({
-            "uid": acct.get("uid"),
-            "nickname": acct.get("nickname"),
-            "email": acct.get("email"),
-            // 同一手机号在不同组织下 uid 相同，前端要靠组织标识才能认出是哪一条账号
+            "uid": account::display_value(&acct, "uid"),
+            "nickname": account::display_value(&acct, "nickname"),
+            "email": account::display_value(&acct, "email"),
             "enterpriseId": account::identity_enterprise_id(&acct),
-            "enterpriseName": acct.get("enterpriseName"),
+            "enterpriseName": account::display_value(&acct, "enterpriseName"),
             "orgKey": account::identity_org_key(&acct),
         }))
     });
@@ -211,12 +235,9 @@ async fn api_codebuddy_cli_install_helper() -> Response {
 
 async fn api_codebuddy_cli_switch(Json(body): Json<Value>) -> Response {
     let id = body.get("accountId").and_then(|v| v.as_str()).unwrap_or("");
-    let close_running_cli = body
-        .get("closeRunningCli")
-        .or_else(|| body.get("close_running_cli"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    match codebuddy_cli::switch_active_account(id, close_running_cli) {
+    // 入参 `closeRunningCli` 已废弃：后端一律先关闭正在运行的 CLI 再写状态，忽略该值。
+    // 无头模式不投递系统通知，切号结果（含关闭数量）照常返回给调用方。
+    match codebuddy_cli::switch_active_account(id) {
         Ok(result) => json_ok(result),
         Err(error) => json_err(error, StatusCode::BAD_REQUEST),
     }
@@ -433,6 +454,11 @@ async fn api_switch(Json(body): Json<Value>) -> Response {
                 .collect()
         })
         .unwrap_or_default();
+    // 同步选择与桌面端同形（[{groupId, previewToken, mode}]），形状由 core 校验。
+    let sync_selections = match session::parse_sync_selections(body.get("syncSelections")) {
+        Ok(selections) => selections,
+        Err(error) => return json_err(error, StatusCode::BAD_REQUEST),
+    };
 
     {
         let mut running = SWITCH_RUNNING.lock().unwrap();
@@ -454,6 +480,7 @@ async fn api_switch(Json(body): Json<Value>) -> Response {
             restart,
             share_sessions,
             &copy_ids,
+            &sync_selections,
         )
     })
     .await;
@@ -510,20 +537,42 @@ async fn api_copy_sessions(Json(body): Json<Value>) -> Response {
     };
     // 档位取目标账号自身（源 uid 也从该档位的登录态读）。
     let variant = account::variant_of(&target);
-    let source_uid = session::current_user_uid(variant);
-    // 能力不满足时返回明确错误而不是空对象。
-    let copied = match session::copy_sessions_for_switch(&target, &session_ids) {
+    // 与桌面端同形：直接返回 core 的复制报告（copied / alreadyLinked / errors / needsRecovery）。
+    let mut report = match session::copy_sessions_for_switch(&target, &session_ids) {
         Ok(report) => report,
         Err(error) => {
             return json_err(error, StatusCode::BAD_REQUEST);
         }
     };
-    json_ok(json!({
-        "sourceUid": source_uid,
-        "targetUid": target.get("uid"),
-        "copied": copied,
-        "variant": variant.as_str(),
-    }))
+    report["variant"] = json!(variant.as_str());
+    json_ok(report)
+}
+
+/// POST /api/session-links/preview —— 预览当前账号 → 目标账号的关联会话同步项。
+///
+/// 与桌面端 `session_links_preview` 同形：直接返回 core 的只读预览（`supported` /
+/// `storeStatus` / `groups`），每组的 `defaultChecked` 与 `availableModes` 是前端的
+/// 勾选权限来源。`variant` 缺省取目标账号自身档位。
+async fn api_session_links_preview(Json(body): Json<Value>) -> Response {
+    let target_account_id = body
+        .get("targetAccountId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if target_account_id.trim().is_empty() {
+        return json_err("缺少 targetAccountId".to_string(), StatusCode::BAD_REQUEST);
+    }
+    let Some(target) = account::find_account(&target_account_id) else {
+        return json_err("目标账号不存在".to_string(), StatusCode::BAD_REQUEST);
+    };
+    let variant = match body.get("variant").and_then(Value::as_str) {
+        Some(raw) => WbVariant::parse(Some(raw)),
+        None => account::variant_of(&target),
+    };
+    match session::session_links_preview(variant, &target) {
+        Ok(report) => json_ok(report),
+        Err(error) => json_err(error, StatusCode::BAD_REQUEST),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +628,85 @@ async fn api_token_statistics(RawQuery(query): RawQuery) -> Response {
             format!("扫描 Token 统计失败: {error}"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
+    }
+}
+
+/// GET /api/rate-limits —— 模型限额台账（全部账号当前受限的模型与官方恢复时刻）。
+///
+/// 扫描本机日志文件，放 blocking 线程避免占用运行时线程；无受限模型时返回空数组。
+async fn api_rate_limits() -> Response {
+    match tokio::task::spawn_blocking(limits::get_rate_limits).await {
+        Ok(payload) => json_ok(payload),
+        Err(error) => json_err(
+            format!("扫描模型限额失败: {error}"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+/// hook 状态 + 运行期字段（最近一次 hook 事件时刻）。
+fn rate_limit_hook_status() -> Value {
+    let mut status = rate_limit_hook::hook_status();
+    status["lastEventAt"] = json!(rate_limit_events::last_event_at());
+    status
+}
+
+/// GET /api/rate-limits/hook-status —— hook 安装状态（脚本 + 三处客户端配置逐项结果）。
+async fn api_rate_limit_hook_status() -> Response {
+    match tokio::task::spawn_blocking(rate_limit_hook_status).await {
+        Ok(status) => json_ok(status),
+        Err(error) => json_err(
+            format!("查询限额 hook 状态失败: {error}"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+/// POST /api/rate-limits/install-hook —— 安装 hook（幂等，写前备份；同时清除「卸载过」标记）。
+async fn api_install_rate_limit_hook() -> Response {
+    match tokio::task::spawn_blocking(|| {
+        let result = rate_limit_hook::install_hook();
+        // 扫描范围随安装结果变化（只对未注册的来源扫日志），缓存必须作废。
+        limits::invalidate_scan_cache();
+        result.map(|_| rate_limit_hook_status())
+    })
+    .await
+    {
+        Ok(Ok(status)) => json_ok(status),
+        Ok(Err(error)) => json_err(error, StatusCode::BAD_REQUEST),
+        Err(error) => json_err(error.to_string(), StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// POST /api/rate-limits/uninstall-hook —— 卸载 hook（移除注册条目，尽量逐字节还原）。
+///
+/// 卸载即用户拒绝自动接入（`hookOptOut`），与安装逻辑同处 core，两个宿主共用同一语义。
+async fn api_uninstall_rate_limit_hook() -> Response {
+    match tokio::task::spawn_blocking(|| {
+        let result = rate_limit_hook::uninstall_hook();
+        limits::invalidate_scan_cache();
+        result.map(|_| rate_limit_hook_status())
+    })
+    .await
+    {
+        Ok(Ok(status)) => json_ok(status),
+        Ok(Err(error)) => json_err(error, StatusCode::BAD_REQUEST),
+        Err(error) => json_err(error.to_string(), StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+async fn api_rate_limit_config() -> Response {
+    json_ok(config::load_rate_limit_config())
+}
+
+/// POST /api/rate-limits/config —— 保存限额监听配置。
+///
+/// 与桌面端同语义：`scanIdeLogs` 变化时作废扫描缓存，下一次按当前来源范围重算。
+async fn api_save_rate_limit_config(Json(body): Json<Value>) -> Response {
+    let submitted = body.get("config").unwrap_or(&body);
+    match limits::save_rate_limit_config(submitted) {
+        Ok(()) => json_ok(config::load_rate_limit_config()),
+        Err(e) => json_err(e.to_string(), StatusCode::BAD_REQUEST),
     }
 }
 
@@ -848,4 +976,35 @@ mod tests {
 
 async fn api_proxy_models() -> Response {
     json_ok(buddy2api_core::modules::proxy_http::list_models().await)
+}
+
+// ---------------------------------------------------------------------------
+// 通知存档（toast 事后可查）
+// ---------------------------------------------------------------------------
+
+/// GET /api/notifications —— 最近的应用内提示（新的在前，最多 100 条）。
+async fn api_notifications() -> Response {
+    match notifications::list() {
+        Ok(items) => json_ok(json!({ "items": items })),
+        Err(error) => json_err(error, StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// POST /api/notifications/record —— 记录一条提示（前端 toast 同步写一份）。
+async fn api_record_notification(Json(body): Json<Value>) -> Response {
+    let level = body.get("level").and_then(|v| v.as_str()).unwrap_or("info");
+    let title = body.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let description = body.get("description").and_then(|v| v.as_str());
+    match notifications::record(level, title, description) {
+        Ok(()) => json_ok(json!({ "recorded": true })),
+        Err(error) => json_err(error, StatusCode::BAD_REQUEST),
+    }
+}
+
+/// POST /api/notifications/clear —— 清空通知存档。
+async fn api_clear_notifications() -> Response {
+    match notifications::clear() {
+        Ok(()) => json_ok(json!({ "cleared": true })),
+        Err(error) => json_err(error, StatusCode::BAD_REQUEST),
+    }
 }
