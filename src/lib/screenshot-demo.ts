@@ -479,7 +479,7 @@ export function screenshotDemoResponse(command: string, args?: Record<string, un
   const config = rotateConfig();
   const rotateStatus: RotateStatus = { config, cliConfigured: true, activeAccountId: demoAccounts[0].id, activeAccountName: demoAccounts[0].nickname, lastCheckAt: atLocalTime(0, 9, 30), lastSwitchAt: atLocalTime(1, 16, 20) };
   const githubConfig: GithubConfig = { owner: "zhangjia", repo: "buddy2api", proxy: "" };
-  const proxyStatus: ProxyStatus = { enabled: true, baseUrl: "/v1", config: { enabled: true }, activeAccount: activeAccount };
+  const proxyStatus: ProxyStatus = { enabled: true, baseUrl: "http://127.0.0.1:57891/v1", running: true, config: { enabled: true }, activeAccount: activeAccount };
   switch (command) {
     // 档位随请求回显：演示数据本身只有国内版账号，国际版展示空状态。
     case "get_status": {
@@ -539,6 +539,7 @@ export function screenshotDemoResponse(command: string, args?: Record<string, un
     case "rotate_status": return rotateStatus;
     case "get_rotate_logs": return { logs: rotateLogs() };
     case "get_github_config": return githubConfig;
+    case "get_proxy_models": return { data: [{ id: "cn/demo-model", owned_by: "演示" }] };
     case "get_proxy_config": return proxyStatus;
     case "save_proxy_config": return { ...proxyStatus, enabled: Boolean((args?.config as { enabled?: boolean } | undefined)?.enabled), config: { enabled: Boolean((args?.config as { enabled?: boolean } | undefined)?.enabled) } };
     case "check_update": return { ok: true, current: "0.1.24", latest: "0.1.25", latestTag: "v0.1.25", hasUpdate: true, releaseName: "更新提示演示", releaseUrl: "https://github.com/bringCool/buddy2api/releases/tag/v0.1.25" };

@@ -15,7 +15,6 @@ import type {
   CheckinConfig,
   CheckinLog,
   GithubConfig,
-  ProxyStatus,
   RotateLog,
   RotateStatus,
   UpdateInfo,
@@ -936,114 +935,6 @@ function AppearanceCard() {
   );
 }
 
-/** 2API：本地 OpenAI 兼容代理开关与状态。 */
-function ProxyApiCard() {
-  const [status, setStatus] = useState<ProxyStatus | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function load() {
-    try {
-      setStatus(await api.getProxyConfig());
-    } catch (e) {
-      setMsg({ type: "err", text: api.asError(e) });
-    }
-  }
-
-  async function toggle(enabled: boolean) {
-    if (!status) return;
-    setSaving(true);
-    setMsg(null);
-    try {
-      const saved = await api.saveProxyConfig({ ...status.config, enabled });
-      setStatus(saved);
-      setMsg({ type: "ok", text: saved.enabled ? "2API 代理已开启" : "2API 代理已关闭" });
-    } catch (e) {
-      setMsg({ type: "err", text: api.asError(e) });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function copyBaseUrl() {
-    if (!status) return;
-    const base = `${window.location.origin}${status.baseUrl}`;
-    try {
-      await navigator.clipboard.writeText(base);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setMsg({ type: "err", text: "复制失败，请手动复制上方地址" });
-    }
-  }
-
-  const baseUrl = status ? `${window.location.origin}${status.baseUrl}` : "";
-  const accountName = status?.activeAccount
-    ? status.activeAccount.nickname || status.activeAccount.email || status.activeAccount.id
-    : "无可用账号";
-
-  return (
-    <SettingsGroup id="settings-proxy-api" title="本地 API（2API）">
-      <CardContent className="space-y-0 p-0">
-        {status ? (
-          <>
-            <SettingsFieldRow
-              label="开启本地 OpenAI 兼容代理"
-              description="对外暴露 /v1/chat/completions 与 /v1/models，用当前激活账号转发，仅本机可用、免凭据"
-              htmlFor="proxy-enabled"
-              operational
-            >
-              <Switch
-                id="proxy-enabled"
-                checked={status.enabled}
-                disabled={saving}
-                onCheckedChange={(v) => void toggle(v)}
-              />
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              label="Base URL"
-              description={`当前账号：${accountName}`}
-              htmlFor="proxy-base-url"
-              operational
-            >
-              <button
-                type="button"
-                id="proxy-base-url"
-                onClick={() => void copyBaseUrl()}
-                className="break-all text-left font-mono text-xs text-primary underline-offset-2 hover:underline"
-                title="点击复制"
-              >
-                {copied ? "已复制" : baseUrl}
-              </button>
-            </SettingsFieldRow>
-
-            <div className="border-b-0 border-border/60 px-4 py-3 text-xs leading-5 text-muted-foreground sm:px-5">
-              模型 id 可加前缀指定渠道：<code className="font-mono">cn/&lt;model&gt;</code> 走国内站、
-              <code className="font-mono"> intl/&lt;model&gt;</code> 走国际站；无前缀走默认池。
-              <br />
-              安全提示：本机任意程序可无需凭据调用你当前账号的额度，请勿在共享电脑开启。
-            </div>
-          </>
-        ) : (
-          <div className="px-4 py-3 text-sm text-muted-foreground sm:px-5">加载中…</div>
-        )}
-
-        {msg && (
-          <Alert variant={msg.type === "ok" ? "default" : "destructive"} className="!w-auto mx-4 my-4 sm:mx-5">
-            <AlertDescription>{msg.text}</AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </SettingsGroup>
-  );
-}
-
 /** 设置页：自动签到配置 / 权限检测 / 更新配置。 */
 export default function SettingsPage() {
   return (
@@ -1055,7 +946,6 @@ export default function SettingsPage() {
 
       <div className="min-w-0 space-y-12">
         <AppearanceCard />
-        <ProxyApiCard />
         <PermissionCheckCard />
         <AutoCheckinCard />
         <AutoRotateCard />

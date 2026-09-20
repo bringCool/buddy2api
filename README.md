@@ -100,9 +100,10 @@ xattr -rd com.apple.quarantine "/Applications/buddy2api.app"
 
 ## 2API 本地代理
 
-在设置页开启「本地 API（2API）」后，`buddy2api` 常驻服务会额外暴露一套 **OpenAI 兼容接口**，用账号库里当前激活账号的凭据转发到 WorkBuddy 官方接口。上游本身就是标准 OpenAI 协议，因此代理不做任何格式转换，只做「选账号 + 注入鉴权头 + 双向流透传」。
+在左侧「2API」页管理本地服务、复制接入地址，并查看、搜索和复制模型 ID。开启服务后，应用会监听本机 HTTP 端口，通过账号池转发到 WorkBuddy 官方的 **OpenAI 兼容接口**。上游本身就是标准 OpenAI 协议，因此代理不做任何格式转换，只做「选账号 + 注入鉴权头 + 双向流透传」。
 
-- **Base URL**：`http://127.0.0.1:57890/v1`
+- **桌面版 Base URL**：`http://127.0.0.1:57891/v1`（退出应用后停止；端口占用会在 2API 页报错）
+- **命令行版 Base URL**：`http://127.0.0.1:57890/v1`（使用 `--port` 时以页面显示为准）
 - **端点**：`POST /v1/chat/completions`、`GET /v1/models`
 - **鉴权**：本机免凭据（仅绑定 `127.0.0.1`）；请勿在共享电脑开启
 
@@ -123,12 +124,12 @@ xattr -rd com.apple.quarantine "/Applications/buddy2api.app"
 - **熔断**：账号级失败（401/403）连续达阈值后进入冷却，冷却期跳过，成功后清零。
 - **token 自动刷新**：发请求前若即将过期则先刷新；上游仍返回 401/403 时刷新一次并重试一次。
 
-示例：
+桌面版示例（命令行版请替换为对应端口）：
 
 ```bash
-curl http://127.0.0.1:57890/v1/models
+curl http://127.0.0.1:57891/v1/models
 
-curl http://127.0.0.1:57890/v1/chat/completions \
+curl http://127.0.0.1:57891/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"intl/deepseek-v4.1-flash","messages":[{"role":"user","content":"hi"}],"stream":true}'
 ```

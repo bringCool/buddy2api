@@ -40,9 +40,10 @@ import { screenshotDemoResponse } from "./screenshot-demo";
  * - 桌面 App（Tauri）：`invoke` 调用 Rust commands
  * - webui（浏览器）：HTTP fetch 调用本地 buddy2api 服务（127.0.0.1）
  */
-const API_BASE = "http://127.0.0.1:57890";
+const API_BASE = import.meta.env.DEV ? "http://127.0.0.1:57890" : window.location.origin;
 
 const DEMO_READ_COMMANDS = new Set([
+  "get_proxy_config", "get_proxy_models",
   "get_status", "get_accounts", "get_codebuddy_cli_status", "get_codebuddy_cn_ide_status", "get_codebuddy_ide_status", "get_checkin_status",
   "get_credit_expiry", "get_credit_statistics", "get_auto_checkin_config",
   "get_token_statistics",
@@ -122,6 +123,7 @@ const ROUTES: Record<string, Route> = {
   save_github_config: { method: "POST", path: "/api/update/config" },
   check_update: { method: "GET", path: "/api/update/check" },
   switch_progress: { method: "GET", path: "/api/switch/progress" },
+  get_proxy_models: { method: "GET", path: "/api/proxy/models" },
   get_proxy_config: { method: "GET", path: "/api/proxy/config" },
   save_proxy_config: { method: "POST", path: "/api/proxy/config" },
 };
@@ -577,4 +579,14 @@ export function asError(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;
   return JSON.stringify(e ?? "未知错误");
+}
+
+export function getProxyModels(): Promise<{ data: { id: string; owned_by?: string }[]; errors?: string[] }> {
+  return call("get_proxy_models");
+}
+
+export function proxyBaseUrl(status: ProxyStatus): string {
+  if (/^https?:\/\//.test(status.baseUrl)) return status.baseUrl;
+  if (isDesktop() && !isDemoMode()) return "";
+  return new URL(status.baseUrl, API_BASE || window.location.origin).href;
 }

@@ -431,13 +431,15 @@ export interface ProxyConfig {
   enabled: boolean;
 }
 
-/** 2API 状态与配置（设置页展示用）。 */
+/** 2API 服务状态与配置。 */
 export interface ProxyStatus {
   enabled: boolean;
-  /** 对外 base URL 路径，如 `/v1`。 */
+  running?: boolean;
+  error?: string | null;
+  /** 桌面端返回绝对 HTTP 地址，Web 端返回 `/v1`。 */
   baseUrl: string;
   config: ProxyConfig;
-  /** 当前激活账号（作为代理使用的账号）。 */
+  /** 当前激活账号；实际转发由账号池选择。 */
   activeAccount?: AccountMeta | null;
 }
 

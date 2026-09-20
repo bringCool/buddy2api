@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands;
+mod proxy_server;
 #[cfg(target_os = "macos")]
 mod instance_lock;
 #[cfg(desktop)]
@@ -128,6 +129,7 @@ pub fn run() {
             }
             // README 截图模式只渲染前端虚构数据，禁止读取账号后执行签到、轮换或保活。
             if !is_screenshot_demo() {
+                tauri::async_runtime::spawn(async { proxy_server::status().await; });
                 spawn_background_loops();
             }
             Ok(())
@@ -180,6 +182,7 @@ pub fn run() {
             commands::save_github_config,
             commands::check_update,
             commands::get_proxy_config,
+            commands::get_proxy_models,
             commands::save_proxy_config,
             commands::relaunch_app,
             commands::get_launch_at_login_enabled,

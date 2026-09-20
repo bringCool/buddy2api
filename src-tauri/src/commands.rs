@@ -555,27 +555,19 @@ pub async fn check_update(proxy: Option<String>, force: Option<bool>) -> Value {
 
 /// GET /api/proxy/config —— 2API 代理配置与当前激活账号。
 #[tauri::command]
-pub fn get_proxy_config() -> Value {
-    let account = openai_proxy::active_account();
-    json!({
-        "enabled": openai_proxy::proxy_enabled(),
-        "baseUrl": "/v1",
-        "config": openai_proxy::load_proxy_config(),
-        "activeAccount": account.as_ref().map(account::account_meta),
-    })
+pub async fn get_proxy_config() -> Value {
+    crate::proxy_server::status().await
 }
 
-/// POST /api/proxy/config —— 保存 2API 代理配置。
 #[tauri::command]
-pub fn save_proxy_config(config: Value) -> Result<Value, String> {
+pub async fn save_proxy_config(config: Value) -> Result<Value, String> {
     openai_proxy::save_proxy_config(&config)?;
-    let account = openai_proxy::active_account();
-    Ok(json!({
-        "enabled": openai_proxy::proxy_enabled(),
-        "baseUrl": "/v1",
-        "config": openai_proxy::load_proxy_config(),
-        "activeAccount": account.as_ref().map(account::account_meta),
-    }))
+    Ok(crate::proxy_server::status().await)
+}
+
+#[tauri::command]
+pub async fn get_proxy_models() -> Value {
+    buddy2api_core::modules::proxy_http::list_models().await
 }
 
 /// 启动当前应用的新进程并退出旧进程，用于更新安装完成后的立即重启。

@@ -460,6 +460,7 @@ dependencies = [
 name = "buddy2api"
 version = "0.1.39"
 dependencies = [
+ "axum",
  "buddy2api-core",
  "libc",
  "objc2",
@@ -485,6 +486,7 @@ version = "0.1.39"
 dependencies = [
  "aes",
  "aes-gcm",
+ "axum",
  "base64 0.22.1",
  "cbc",
  "chrono",
