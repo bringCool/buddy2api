@@ -458,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "buddy2api"
-version = "0.1.41"
+version = "0.1.45"
 dependencies = [
  "axum",
  "buddy2api-core",
@@ -483,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "buddy2api-core"
-version = "0.1.41"
+version = "0.1.45"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "buddy2api-server"
-version = "0.1.41"
+version = "0.1.45"
 dependencies = [
  "axum",
  "buddy2api-core",

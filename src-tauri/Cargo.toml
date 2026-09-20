@@ -1,6 +1,6 @@
 [package]
 name = "buddy2api"
-version = "0.1.41"
+version = "0.1.45"
 description = "buddy2api —— WorkBuddy 账号切换工具（Rust/Tauri 版）"
 authors = ["apple"]
 edition = "2021"

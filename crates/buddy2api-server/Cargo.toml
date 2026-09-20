@@ -1,6 +1,6 @@
 [package]
 name = "buddy2api-server"
-version = "0.1.41"
+version = "0.1.45"
 edition = "2021"
 description = "buddy2api HTTP server + CLI（npm 安装形态：buddy2api 命令启动本地 webui）"
 
