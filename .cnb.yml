@@ -6,6 +6,20 @@ $:
         - vscode
         - docker
 
+  tag_push:
+    - imports:
+        - https://cnb.cool/BringSecret/Keys/-/blob/main/ThirdParty/Github.yml
+      stages:
+        - name: sync tag to github
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/bringCool/buddy2api.git
+            auth_type: https
+            username: ${UserName}
+            password: ${GH_TOKEN}
+            # 插件将 branch 作为 Git ref 推送；仅同步当前 tag，避免 --tags 发布历史版本。
+            branch: refs/tags/${CNB_BRANCH}
+
 main:
   push:
     - imports:
@@ -18,3 +32,4 @@ main:
             auth_type: https
             username: ${UserName}
             password: ${GH_TOKEN}
+            branch: main
