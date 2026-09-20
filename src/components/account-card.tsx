@@ -20,12 +20,12 @@ import { demoModeEnabled } from "@/lib/demo-mode";
 import type { AccountMeta, CreditExpiry, CreditResource, TravelStatus } from "@/lib/types";
 
 const AVATAR_TONES = [
-  "bg-emerald-100 text-emerald-800",
-  "bg-violet-100 text-violet-800",
-  "bg-sky-100 text-sky-800",
-  "bg-amber-100 text-amber-800",
-  "bg-rose-100 text-rose-800",
-  "bg-teal-100 text-teal-800",
+  "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+  "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
+  "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
+  "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300",
+  "bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300",
 ] as const;
 
 function avatarTone(name: string) {
@@ -351,11 +351,11 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
 
   return (
     <TooltipProvider>
-      <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,.025),0_10px_28px_rgba(15,23,42,.035)] transition-shadow hover:shadow-[0_2px_4px_rgba(15,23,42,.04),0_14px_34px_rgba(15,23,42,.055)]">
+      <article className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs transition-[border-color,box-shadow] hover:border-primary/25 hover:shadow-sm">
       <header
         className={cn(
           "relative flex items-center border-b border-border",
-          compact ? "min-h-[52px] px-3.5 py-1.5" : "min-h-[104px] px-5 py-3",
+          compact ? "min-h-[76px] px-3.5 py-3" : "min-h-[92px] px-5 py-3",
           /* 选中态染色，优先级：WorkBuddy（品牌绿）> CodeBuddy IDE（淡紫）> CodeBuddy CLI（中性灰）> 默认。
              多个产品同时选中时取优先级最高者；具体哪几个产品在使用由 header 的标记+勾选角标表达。
              CodeBuddy IDE 的紫是产品专属色：主题里没有对应语义 token，故用 Tailwind 的 violet-500
@@ -363,35 +363,7 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
           workbuddyActive ? "bg-primary/5" : codebuddyCnIdeActive ? "bg-violet-500/5" : codebuddyCliActive ? "bg-muted/60" : "bg-muted/30",
         )}
       >
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div
-            className={cn(
-              "absolute -right-10 -top-16 rounded-full blur-2xl",
-              compact ? "size-20" : "size-24",
-              workbuddyActive ? "bg-primary/15" : codebuddyCnIdeActive ? "bg-violet-500/15" : codebuddyCliActive ? "bg-muted/50" : "bg-muted/30",
-            )}
-          />
-          {workbuddyActive && (
-            <div className={cn("absolute top-[64%] -translate-y-1/2 opacity-[0.075] saturate-50 grayscale-[10%]", codebuddyCliActive ? "right-[68px] rotate-[8deg]" : "right-5 rotate-[7deg]")}>
-              <WorkBuddyMark size={compact ? 40 : 56} />
-            </div>
-          )}
-          {codebuddyCliActive && (
-            <div className={cn("absolute top-[63%] -translate-y-1/2 opacity-[0.065] saturate-50 grayscale-[18%]", workbuddyActive ? "right-1 -rotate-[8deg]" : "right-5 -rotate-[7deg]")}>
-              <CodeBuddyMark size={compact ? 38 : 54} />
-            </div>
-          )}
-          {codebuddyCnIdeActive && (
-            /* 复用 WorkBuddy 的 SVG：两个产品的标记同形；CodeBuddyCnIdeMark 是位图 app 图标，
-               放大到水印尺寸会是一块模糊方块。位置与旋转与 WorkBuddy 水印相同 —— 两者同时选中时
-               完全重合，因此无需再引入第三套偏移规则。 */
-            <div className={cn("absolute top-[64%] -translate-y-1/2 opacity-[0.075] saturate-50 grayscale-[10%]", codebuddyCliActive ? "right-[68px] rotate-[8deg]" : "right-5 rotate-[7deg]")}>
-              <WorkBuddyMark size={compact ? 40 : 56} />
-            </div>
-          )}
-        </div>
-
-        <div className={cn("absolute z-20", compact ? "right-2.5 top-1/2 -translate-y-1/2" : "right-3.5 top-3.5")}>
+        <div className={cn("absolute z-20", compact ? "right-2 top-3" : "right-3.5 top-3.5")}>
           {demoModeEnabled ? (
             <DemoAction>
               <Button variant="ghost" size="icon" className={cn("rounded-lg text-muted-foreground hover:text-foreground", compact ? "size-7" : "size-8")} aria-label={`管理账号 ${name}`} title="更多账号操作">
@@ -424,10 +396,10 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
         </div>
 
         {compact ? (
-          <div className="relative z-10 flex w-full min-w-0 items-center gap-2 pr-10">
+          <div className="relative z-10 grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 pr-7">
             <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-5" title={name}>{name}</h3>
-            <div className="hidden shrink-0 items-center gap-1 min-[420px]:flex">{statusChips}</div>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <div className="col-span-2 row-start-2 flex min-w-0 flex-wrap items-center gap-1">{statusChips}</div>
+            <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-1">
               {workbuddyActive ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -503,8 +475,8 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
             </div>
           </div>
         ) : (
-          <div className={cn("relative z-10 flex w-full min-w-0 items-center gap-3", workbuddyActive || codebuddyCliActive ? "pr-[112px]" : "pr-10")}>
-            <div className={cn("flex size-12 shrink-0 items-center justify-center rounded-full text-base font-semibold ring-4 ring-white/65", avatarClass)}>{name.charAt(0).toUpperCase()}</div>
+          <div className="relative z-10 flex w-full min-w-0 items-center gap-3 pr-10">
+            <div className={cn("flex size-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold ring-1 ring-border", avatarClass)}>{name.charAt(0).toUpperCase()}</div>
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-sm font-semibold leading-5" title={name}>{name}</h3>
               <p className="mt-0.5 truncate text-xs leading-5 text-muted-foreground" title={account.email || account.uid || account.id}>{accountIdentity(account)}</p>
@@ -580,14 +552,14 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
         <footer className="flex flex-wrap items-center gap-2.5 border-t px-5 py-2.5">
           {workbuddyActive ? <ProductCurrentState product="workbuddy" compact /> : demoModeEnabled ? (
             <DemoAction>
-              <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 pr-3.5 text-xs" aria-label="设为 WorkBuddy 当前账号">
+              <Button variant="outline" size="sm" className="h-8 rounded-md px-2.5 text-xs" aria-label="设为 WorkBuddy 当前账号">
                 <WorkBuddyMark size={18} /><span>设为当前</span>
               </Button>
             </DemoAction>
           ) : (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 pr-3.5 text-xs" disabled={featuresDisabled || !onSwitch} onClick={() => onSwitch?.(account)} aria-label="设为 WorkBuddy 当前账号">
+                <Button variant="outline" size="sm" className="h-8 rounded-md px-2.5 text-xs" disabled={featuresDisabled || !onSwitch} onClick={() => onSwitch?.(account)} aria-label="设为 WorkBuddy 当前账号">
                   <WorkBuddyMark size={18} /><span>设为当前</span>
                 </Button>
               </TooltipTrigger>
@@ -597,7 +569,7 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
           {codebuddyCnIdeActive ? <ProductCurrentState product="codebuddy-cn" compact /> : (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 pr-3.5 text-xs" disabled={featuresDisabled || !codebuddyCnIdeAvailable || !onSwitchCodebuddyCnIde || codebuddyCnIdeBusy} onClick={() => onSwitchCodebuddyCnIde?.(account)} aria-label={codebuddyCnIdeLoading ? "正在切换 CodeBuddy IDE" : "切换到 CodeBuddy IDE"} aria-busy={codebuddyCnIdeLoading}>
+                <Button variant="outline" size="sm" className="h-8 rounded-md px-2.5 text-xs" disabled={featuresDisabled || !codebuddyCnIdeAvailable || !onSwitchCodebuddyCnIde || codebuddyCnIdeBusy} onClick={() => onSwitchCodebuddyCnIde?.(account)} aria-label={codebuddyCnIdeLoading ? "正在切换 CodeBuddy IDE" : "切换到 CodeBuddy IDE"} aria-busy={codebuddyCnIdeLoading}>
                   {codebuddyCnIdeLoading ? <Loader2 className="size-4 animate-spin" /> : <CodeBuddyCnIdeMark size={18} />}<span>{codebuddyCnIdeLoading ? "切换中…" : "IDE"}</span>
                 </Button>
               </TooltipTrigger>
@@ -607,7 +579,7 @@ export function AccountCard({ account, onDelete, onCheckin, onRefresh, onSwitch,
           {codebuddyCliActive ? <ProductCurrentState product="codebuddy" compact /> : (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 rounded-full px-2.5 pr-3.5 text-xs" disabled={featuresDisabled || !codebuddyCliConfigured || !onSwitchCodebuddyCli || codebuddyCliBusy} onClick={() => onSwitchCodebuddyCli?.(account)} aria-label={codebuddyCliLoading ? "正在切换 CodeBuddy CLI 当前账号" : "设为 CodeBuddy CLI 当前账号"} aria-busy={codebuddyCliLoading}>
+                <Button variant="outline" size="sm" className="h-8 rounded-md px-2.5 text-xs" disabled={featuresDisabled || !codebuddyCliConfigured || !onSwitchCodebuddyCli || codebuddyCliBusy} onClick={() => onSwitchCodebuddyCli?.(account)} aria-label={codebuddyCliLoading ? "正在切换 CodeBuddy CLI 当前账号" : "设为 CodeBuddy CLI 当前账号"} aria-busy={codebuddyCliLoading}>
                   {codebuddyCliLoading ? <Loader2 className="size-4 animate-spin" /> : <CodeBuddyMark size={18} />}<span>{codebuddyCliLoading ? "切换中…" : "CLI 当前"}</span>
                 </Button>
               </TooltipTrigger>

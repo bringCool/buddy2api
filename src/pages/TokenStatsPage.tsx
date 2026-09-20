@@ -1416,7 +1416,7 @@ function Dashboard({ source }: { source: TokenStatsSource }) {
   }
 
   return (
-    <div className="min-w-0 space-y-12">
+    <div className="min-w-0 space-y-7">
       <Overview source={source} />
       <TrendChart source={source} />
       <Heatmap groups={source.daily} />
@@ -1435,7 +1435,7 @@ function Dashboard({ source }: { source: TokenStatsSource }) {
 function TokenStatsLoadingSkeleton() {
   return (
     <div
-      className="min-w-0 space-y-12"
+      className="min-w-0 space-y-7"
       role="status"
       aria-label="正在扫描本地会话日志…"
     >
@@ -1588,8 +1588,8 @@ export default function TokenStatsPage() {
   const source = stats?.sources.find((item) => item.source === active);
 
   return (
-    <div className="mx-auto w-full max-w-[1180px] min-w-0 px-4 py-6 sm:px-8 sm:py-9">
-      <header className="mb-6 flex min-w-0 flex-wrap items-start justify-between gap-4">
+    <div className="app-page">
+      <header className="app-page-header">
         <div className="min-w-0">
           {loading && !stats ? (
             <div aria-hidden="true">
@@ -1598,8 +1598,8 @@ export default function TokenStatsPage() {
             </div>
           ) : (
             <>
-              <h1 className="text-[28px] font-semibold tracking-tight">Token 统计</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              <h1 className="app-page-title">Token 统计</h1>
+              <p className="app-page-description">
                 当前数据更新于 {stats ? formatDateTime(stats.generatedAt) : "—"}
               </p>
             </>

@@ -692,12 +692,12 @@ export default function AccountsPage() {
     : "未安装";
   const codebuddyUsesSettingsEnv = codebuddyCli?.authMode === "settings-env";
   return (
-    <div className="mx-auto w-full max-w-[1180px] px-6 py-8 sm:px-8 sm:py-9">
-      <header className="mb-6">
-        <div className="flex items-start justify-between gap-4">
+    <div className="app-page">
+      <header className="app-page-header block">
+        <div className="flex w-full flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-[28px] font-semibold tracking-tight">账号管理</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <h1 className="app-page-title">账号管理</h1>
+            <p className="app-page-description">
               统一管理 WorkBuddy、CodeBuddy IDE 与 CodeBuddy CLI 账号、积分和签到状态。
             </p>
             <Tabs
@@ -764,10 +764,7 @@ export default function AccountsPage() {
         </div>
       </header>
 
-      <div className="relative mb-6 overflow-visible rounded-2xl border border-border bg-muted/30 px-5 py-5 shadow-[0_6px_20px_rgba(15,23,42,.025)]">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
-          <div className="absolute -right-12 -top-20 size-44 rounded-full border-[28px] border-slate-400/[0.035]" />
-        </div>
+      <div className="relative mb-6 rounded-xl border border-border bg-card px-5 py-4">
         <div className="relative flex flex-wrap items-center gap-x-5 gap-y-4">
           <div className="min-w-[190px] flex-1">
             <h2 className="text-sm font-semibold text-foreground">添加与迁移账号</h2>
@@ -989,7 +986,7 @@ export default function AccountsPage() {
             )}
           </div>
         ) : (
-          <div className={cn("grid min-w-0 gap-5", compact ? "grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]" : "grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))]")}>
+          <div className={cn("grid min-w-0 gap-4", compact ? "grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]" : "grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))]")}>
             {/* 不要给这个网格加 items-start：它会覆盖 Grid 默认的 stretch，让同排卡片因内容长度不同而
                 高低参差。卡片内部 article 是 flex-col、内容区是 flex-1，会自动吸收差额、footer 自动贴底对齐。 */}
             {orderedAccounts.map((a) => (

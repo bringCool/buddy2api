@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, HashRouter, Navigate, NavLink, Outlet, Route, Routes } from "react-router-dom";
-import { ArrowUp, Plug, MessagesSquare, Settings, Sparkles, User } from "lucide-react";
+import { ArrowUp, Package, Plug, MessagesSquare, Settings, Sparkles, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import * as api from "@/lib/api";
@@ -10,7 +10,7 @@ import CreditStatsPage from "@/pages/CreditStatsPage";
 import TokenStatsPage from "@/pages/TokenStatsPage";
 import ProxyPage from "@/pages/ProxyPage";
 import SettingsPage from "@/pages/SettingsPage";
-import { StatusDot, AppIconMark } from "@/components/product-marks";
+import { AppIconMark } from "@/components/product-marks";
 import { UpdateInstallDialog } from "@/components/update-install-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import { useCreditAutoRefresh } from "@/lib/use-credit-auto-refresh";
 import { useWorkbuddyStatusRefresh } from "@/lib/use-workbuddy-status-refresh";
 import { useAccountsStore } from "@/stores/accounts";
 
-function UpdateCenter({ running }: { running: boolean | undefined }) {
+function UpdateCenter() {
   const version = useAccountsStore((s) => s.status?.version);
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -50,28 +50,32 @@ function UpdateCenter({ running }: { running: boolean | undefined }) {
 
   return (
     <>
-      <section className="mt-auto border-t border-sidebar-border px-2 pt-3 text-xs">
-        <div className="flex items-center gap-2 text-[13px] text-sidebar-foreground">
-          <StatusDot on={Boolean(running)} />
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <span className="text-sidebar-foreground/50">v{version || "?"}</span>
-            {hasUpdate && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="icon"
-                    className="size-5 rounded-full p-0"
-                    aria-label="更新"
-                    onClick={() => setDialogOpen(true)}
-                  >
-                    <ArrowUp className="size-3" strokeWidth={2.5} aria-hidden="true" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">更新</TooltipContent>
-              </Tooltip>
-            )}
+      <section aria-label="应用版本" className="mt-auto border-t border-sidebar-border px-3 pt-4">
+        <div className="flex min-h-9 items-center gap-2.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-sidebar-border bg-background/60 text-muted-foreground">
+            <Package className="size-4" strokeWidth={1.5} aria-hidden="true" />
           </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] leading-4 text-muted-foreground">当前版本</p>
+            <p className="truncate text-xs font-medium leading-5 tabular-nums text-sidebar-foreground">{version ? `v${version}` : "读取中…"}</p>
+          </div>
+          {hasUpdate && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary"
+                  aria-label={`升级到 v${info?.latest}`}
+                  onClick={() => setDialogOpen(true)}
+                >
+                  <ArrowUp className="size-3.5" strokeWidth={2} aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">升级到 v{info?.latest}</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </section>
       <UpdateInstallDialog
@@ -84,7 +88,6 @@ function UpdateCenter({ running }: { running: boolean | undefined }) {
 }
 
 function Layout() {
-  const running = useAccountsStore((s) => s.status?.running);
   const hasUnifiedTitleBar =
     api.isDesktop() && typeof navigator !== "undefined" && navigator.userAgent.includes("Macintosh");
   useCreditAutoRefresh();
@@ -101,12 +104,12 @@ function Layout() {
       ) : null}
       <aside
         className={cn(
-          "flex min-h-0 w-[220px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar px-3 pb-4",
-          hasUnifiedTitleBar ? "pt-20" : "pt-4",
+          "flex min-h-0 w-[188px] lg:w-[204px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar px-3 pb-4",
+          hasUnifiedTitleBar ? "pt-14" : "pt-7",
         )}
       >
-        <div className="flex items-center gap-2.5 px-1 pb-5">
-          <AppIconMark size={36} className="drop-shadow-sm" />
+        <div className="flex items-center gap-2.5 px-3 pb-8">
+          <AppIconMark size={30} />
           <div className="min-w-0">
             <div
               className="truncate text-[15px] leading-5 tracking-[-0.02em] text-sidebar-foreground/90"
@@ -124,59 +127,31 @@ function Layout() {
             )}
           </div>
         </div>
-        <nav className="flex min-h-0 flex-1 flex-col gap-0.5" aria-label="主导航">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
-                isActive
-                  ? "bg-foreground/[0.06] font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-              )
-            }
-          >
-            <User className="size-4" />
-            账号管理
-          </NavLink>
-          <NavLink to="/token-stats" className={({ isActive }) => cn("flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm outline-none transition-colors", isActive ? "bg-foreground/[0.06] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground")}><MessagesSquare className="size-4" />Token 统计</NavLink>
-          <NavLink
-            to="/credit-stats"
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
-                isActive
-                  ? "bg-foreground/[0.06] font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-              )
-            }
-          >
-            <Sparkles className="size-4" />
-            积分统计
-          </NavLink>
-          <NavLink to="/2api" className={({ isActive }) => cn("flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring/50", isActive ? "bg-foreground/[0.06] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground")}><Plug className="size-4" />2API</NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
-                isActive
-                  ? "bg-foreground/[0.06] font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-              )
-            }
-          >
-            <Settings className="size-4" />
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" aria-label="主导航">
+          <p className="mb-1 px-3 text-[11px] font-medium tracking-wider text-muted-foreground">工作空间</p>
+          {[
+            { to: "/", label: "账号管理", icon: User },
+            { to: "/2api", label: "2API", icon: Plug },
+            { to: "/token-stats", label: "Token 统计", icon: MessagesSquare },
+            { to: "/credit-stats", label: "积分统计", icon: Sparkles },
+          ].map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} end={to === "/"} className="app-nav-link">
+              <Icon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+              {label}
+            </NavLink>
+          ))}
+          <div className="mx-3 my-3 border-t border-sidebar-border" />
+          <NavLink to="/settings" className="app-nav-link">
+            <Settings className="size-4" strokeWidth={1.75} aria-hidden="true" />
             设置
           </NavLink>
         </nav>
-        {api.isWebui() && !demoModeEnabled ? null : <UpdateCenter running={running} />}
+        {api.isWebui() && !demoModeEnabled ? null : <UpdateCenter />}
       </aside>
       <main
         className={cn(
           "min-w-0 flex-1 overflow-y-auto bg-background overscroll-contain",
-          hasUnifiedTitleBar && "pt-16 [&>div]:pt-4",
+          hasUnifiedTitleBar && "pt-8",
         )}
       >
         <Outlet />

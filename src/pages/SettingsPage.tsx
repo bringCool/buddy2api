@@ -35,7 +35,7 @@ function SettingsGroup({ id, title, children }: SettingsGroupProps) {
   return (
     <section className="min-w-0 space-y-2.5" aria-labelledby={id}>
       <div className="px-1">
-        <h2 id={id} className="text-[13px] font-medium leading-5">
+        <h2 id={id} className="text-sm font-semibold leading-5">
           {title}
         </h2>
       </div>
@@ -48,7 +48,7 @@ function SettingsRow({ children, className }: { children: ReactNode; className?:
   return (
     <div
       className={cn(
-        "mx-4 flex min-w-0 items-center justify-between gap-3 border-b border-border/50 px-0 py-2.5 sm:mx-5",
+        "mx-4 flex min-w-0 items-center justify-between gap-3 border-b border-border/60 px-0 py-3.5 sm:mx-5",
         className,
       )}
     >
@@ -78,14 +78,14 @@ function SettingsFieldRow({
     <SettingsRow className={cn("flex-col items-stretch gap-2 sm:flex-row sm:items-center", className)}>
       <div className="min-w-0 flex-1">
         {htmlFor ? (
-          <Label htmlFor={htmlFor} className="text-[13px] leading-4">
+          <Label htmlFor={htmlFor} className="text-sm leading-5">
             {label}
           </Label>
         ) : (
-          <div className="text-[13px] font-medium leading-4">{label}</div>
+          <div className="text-sm font-medium leading-5">{label}</div>
         )}
         {description && (
-          <p className="mt-0.5 text-xs leading-4 text-muted-foreground/75">{description}</p>
+          <p className="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p>
         )}
       </div>
       <div className="flex min-w-0 w-full shrink-0 justify-end sm:w-auto">
@@ -938,13 +938,13 @@ function AppearanceCard() {
 /** 设置页：自动签到配置 / 权限检测 / 更新配置。 */
 export default function SettingsPage() {
   return (
-    <div className="mx-auto min-w-0 w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
-      <header className="mb-10 sm:mb-12">
-        <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">自动签到、权限检测与自动更新配置。</p>
+    <div className="app-page">
+      <header className="app-page-header block">
+        <h1 className="app-page-title">设置</h1>
+        <p className="app-page-description">自动签到、权限检测与自动更新配置。</p>
       </header>
 
-      <div className="min-w-0 space-y-12">
+      <div className="min-w-0 max-w-4xl space-y-7">
         <AppearanceCard />
         <PermissionCheckCard />
         <AutoCheckinCard />
