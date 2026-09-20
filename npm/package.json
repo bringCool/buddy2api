@@ -1,6 +1,6 @@
 {
   "name": "buddy2api",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "description": "WorkBuddy 账号切换工具：本地 webui（浏览器操作）+ 桌面 App（安装后运行 buddy2api）",
   "bin": {
     "buddy2api": "bin/buddy2api.js"
@@ -10,10 +10,10 @@
     "scripts"
   ],
   "optionalDependencies": {
-    "buddy2api-darwin-arm64": "0.1.39",
-    "buddy2api-darwin-x64": "0.1.39",
-    "buddy2api-win32-x64": "0.1.39",
-    "buddy2api-linux-x64": "0.1.39"
+    "buddy2api-darwin-arm64": "0.1.40",
+    "buddy2api-darwin-x64": "0.1.40",
+    "buddy2api-win32-x64": "0.1.40",
+    "buddy2api-linux-x64": "0.1.40"
   },
   "scripts": {
     "postinstall": "node scripts/install.js"
