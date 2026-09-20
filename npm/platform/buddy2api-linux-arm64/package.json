@@ -1,6 +1,6 @@
 {
   "name": "buddy2api-linux-arm64",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "description": "buddy2api platform binary (linux-arm64)",
   "os": [
     "linux"

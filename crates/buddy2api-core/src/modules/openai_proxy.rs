@@ -116,10 +116,15 @@ pub fn models_config_url(variant: WbVariant) -> String {
 
 /// 构造透传上游所需的鉴权头。
 ///
-/// 注入/覆盖：`Authorization` / `X-Domain` / `X-User-Id` / `X-Product: SaaS`。
+/// 注入/覆盖：`User-Agent` / `Authorization` / `X-Domain` / `X-User-Id` / `X-Product: SaaS`。
 /// 以官方客户端请求指纹为准（见 `workbuddy.har`）。缺 uid/domain 时跳过对应头。
 pub fn upstream_headers(account: &Value) -> HashMap<String, String> {
     let mut headers = HashMap::new();
+    // 上游从 UA 解析客户端版本；默认浏览器 UA 会导致 /v3/config 返回 400（12403）。
+    headers.insert(
+        "User-Agent".to_string(),
+        "CodeBuddyIDE/4.11.2 CodeBuddy/4.11.2".to_string(),
+    );
     if let Some(token) = get_str(account, "access_token") {
         headers.insert("Authorization".to_string(), format!("Bearer {token}"));
     }
@@ -694,6 +699,10 @@ mod tests {
             "enterpriseId": "ent-1",
         });
         let headers = upstream_headers(&account);
+        assert_eq!(
+            headers.get("User-Agent").map(String::as_str),
+            Some("CodeBuddyIDE/4.11.2 CodeBuddy/4.11.2")
+        );
         assert_eq!(headers.get("Authorization").map(String::as_str), Some("Bearer AT"));
         assert_eq!(headers.get("X-User-Id").map(String::as_str), Some("u-1"));
         assert_eq!(headers.get("X-Domain").map(String::as_str), Some("www.workbuddy.ai"));
@@ -896,6 +905,8 @@ mod tests {
             assert!(headers_lower.contains("x-domain: www.workbuddy.ai"));
             assert!(headers_lower.contains("x-user-id: u-1"));
             assert!(headers_lower.contains("x-product: saas"));
+            assert!(request.contains("user-agent: CodeBuddyIDE/4.11.2 CodeBuddy/4.11.2\r\n"));
+            assert!(!headers_lower.contains("mozilla/5.0"));
             assert!(request.contains("\"model\":\"glm-5.3\""));
 
             let body = "data: {\"object\":\"chat.completion.chunk\"}\n\n";
